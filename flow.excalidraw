@@ -1272,8 +1272,8 @@
     },
     {
       "type": "text",
-      "version": 319,
-      "versionNonce": 73527811,
+      "version": 320,
+      "versionNonce": 973082608,
       "isDeleted": false,
       "id": "H9NsT-0z_Or6nbB0XoKgm",
       "fillStyle": "cross-hatch",
@@ -1298,7 +1298,7 @@
           "type": "arrow"
         }
       ],
-      "updated": 1737052174079,
+      "updated": 1737066761843,
       "link": null,
       "locked": false,
       "fontSize": 28,
