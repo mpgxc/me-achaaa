@@ -64,7 +64,7 @@ functions:
       - sqs:
           arn: !GetAtt FaceRecognitionQueue.Arn
           batchSize: 10
-          maximumConcurrency: 1 # Limit the number of concurrent executions
+          maximumConcurrency: 2 # Limit the number of concurrent executions
     environment:
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
 
@@ -136,5 +136,28 @@ resources:
       Type: AWS::Rekognition::Collection
       Properties:
         CollectionId: ${self:service}-${self:provider.stage}-collection
+
+    RekognitionBucketAssetsControll:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-rekognition-bucket-assets-controll
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: SK-Index
+            KeySchema:
+              - AttributeName: SK
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
 
 package: ${file(package.yml):package}
