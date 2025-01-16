@@ -61,12 +61,55 @@ Este documento descreve a arquitetura, fluxos de operações, e definições de 
 
 ### Desenho da Arquitetura
 
-```plaintext
-[User] -> [API Gateway] -> [Lambda Functions] -> [AWS Rekognition]
-                                       |
-                                       v
-                                   [DynamoDB]
-                                       |
-                                       v
-                                   [Amazon S3]
+## Arquitetura do Sistema
+
+```mermaid
+graph TD
+Client[Cliente] -->|Upload Imagem| S3[S3 Bucket]
+S3 -->|Evento s3:ObjectCreated| SQS[SQS Queue]
+SQS -->|Trigger| Lambda1[Lambda DetectAndIndexFaces]
+Lambda1 -->|Index Faces| Rekognition[AWS Rekognition]
+Lambda1 -->|Atualizar Metadata| DynamoDB[DynamoDB]
+Client -->|Buscar Faces| API[API Gateway]
+API -->|Request| Lambda2[Lambda FindSimilarFaces]
+Lambda2 -->|Consulta| Rekognition
+Lambda2 -->|Buscar Metadata| DynamoDB
+```
+
+## Fluxo de Processamento
+
+### 1. Upload de Imagem
+
+```mermaid
+sequenceDiagram
+    participant Cliente
+    participant S3 as S3 Bucket
+    participant SQS as SQS Queue
+    participant Lambda as DetectAndIndexFaces
+    participant Rekognition
+    participant DynamoDB
+
+    Cliente->>S3: Upload imagem para /uploads/
+    S3->>SQS: Gera evento ObjectCreated
+    SQS->>Lambda: Trigger lambda com evento
+    Lambda->>Rekognition: IndexFaces
+    Lambda->>DynamoDB: Atualiza metadata
+    Lambda->>DynamoDB: Atualiza faces no álbum
+```
+
+### 2. Busca por Faces Similares
+
+```mermaid
+sequenceDiagram
+    participant Cliente
+    participant API as API Gateway
+    participant Lambda as FindSimilarFaces
+    participant Rekognition
+    participant DynamoDB
+
+    Cliente->>API: POST /search-faces
+    API->>Lambda: Invoca lambda
+    Lambda->>Rekognition: SearchFacesByImage
+    Lambda->>DynamoDB: Busca metadata das faces
+    Lambda->>Cliente: Retorna resultados
 ```
