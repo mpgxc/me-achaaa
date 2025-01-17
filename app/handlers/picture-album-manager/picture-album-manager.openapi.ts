@@ -3,7 +3,7 @@ import {
   ErrorResponse,
   RegisterAlbumRequest,
   SuccessResponse,
-} from "../commons";
+} from "./commons";
 
 export const registerAlbumRoute = createRoute({
   tags: ["Albums"],
