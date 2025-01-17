@@ -1,120 +1,104 @@
+import { serve } from "@hono/node-server";
+import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { PictureAlbumManagementService } from "./picture-album-management.service";
-import {
-  deleteAlbumRoute,
-  registerAlbumRoute,
-} from "./picture-album-manager.openapi";
+import { HTTPException } from "hono/http-exception";
+import { logger } from "hono/logger";
+import { prettyJSON } from "hono/pretty-json";
+import { requestId } from "hono/request-id";
+import { secureHeaders } from "hono/secure-headers";
+import { trimTrailingSlash } from "hono/trailing-slash";
+import { pictureAlbumManagementRoute } from "./picture-album-manager.routes";
 
-export const pictureAlbumManagementRoute = new OpenAPIHono();
+const app = new OpenAPIHono({
+  strict: true,
+});
 
-const albumManagementService = new PictureAlbumManagementService();
+app.use(logger());
+app.use(prettyJSON());
+app.use(secureHeaders());
+app.use(trimTrailingSlash());
+app.use("*", requestId());
 
-pictureAlbumManagementRoute.openapi(registerAlbumRoute, async (ctx) => {
-  const { externalClientAlbumId } = ctx.req.valid("json");
+app.route("/", pictureAlbumManagementRoute);
 
-  console.info(
-    `Creating album with externalClientAlbumId: ${externalClientAlbumId}`
-  );
+app.doc("/api/reference", {
+  openapi: "3.1.0",
+  info: {
+    version: "1.0.0",
+    title: "Album Manager API",
+    description: "API to manage photo albums with A.I.",
+  },
+});
 
-  try {
-    const exists = await albumManagementService.checkAlbumExists(
-      externalClientAlbumId
-    );
+app.use("/api/docs", swaggerUI({ url: "/api/reference" }));
 
-    if (exists) {
-      return ctx.json(
-        {
-          message: "Album already exists",
-        },
-        409
-      );
-    }
-
-    await albumManagementService.createRekognitionCollection(
-      externalClientAlbumId
-    );
-
-    await albumManagementService.createAlbumMetadata(externalClientAlbumId);
-
-    await albumManagementService.createBucketAlbum(externalClientAlbumId);
-
-    return ctx.json(
-      {
-        message: "Album and Rekognition Collection created",
+import("@scalar/hono-api-reference").then((module) => {
+  app.get(
+    "/api/docs/scalar",
+    module.apiReference({
+      theme: "kepler",
+      layout: "modern",
+      pageTitle: "Hono API Reference",
+      spec: {
+        url: "/api/reference",
       },
-      201
-    );
-  } catch (error) {
-    console.error("Error creating album:", error);
+    })
+  );
+});
 
-    try {
-      await albumManagementService.deleteRekognitionCollection(
-        externalClientAlbumId
-      );
+app.onError(async (err, ctx) => {
+  console.error(err, `Error processing request ${ctx.req.routePath}`);
 
-      console.info("Rollback: Rekognition collection deleted");
-    } catch (rollbackError) {
-      console.error(
-        "Error rolling back Rekognition collection:",
-        rollbackError
-      );
-    }
-
+  if (err instanceof HTTPException) {
     return ctx.json(
       {
-        message: "Failed to create album",
-        error: error instanceof Error ? error.message : String(error),
+        message: err.message,
+      },
+      err.status
+    );
+  }
+
+  if (err instanceof Error) {
+    return ctx.json(
+      {
+        name: err.name,
+        message: `${err.message} 🤯 Unexpected exception - please check the logs`,
       },
       500
     );
   }
-});
 
-pictureAlbumManagementRoute.openapi(deleteAlbumRoute, async (ctx) => {
-  const { externalClientAlbumId } = ctx.req.param();
-
-  console.info(
-    `Deleting album with externalClientAlbumId: ${externalClientAlbumId}`
-  );
-
-  try {
-    const exists = await albumManagementService.checkAlbumExists(
-      externalClientAlbumId
-    );
-
-    if (!exists) {
-      return ctx.json(
-        {
-          message: "Album does not exist",
-        },
-        404
-      );
-    }
-
+  return ctx.json(
     {
-      await albumManagementService.deleteRekognitionCollection(
-        externalClientAlbumId
-      );
+      message: "Unexpected exception - please check the logs",
+    },
+    500
+  );
+});
 
-      await albumManagementService.deleteBucketAlbum(externalClientAlbumId);
-      await albumManagementService.deleteAlbumMetadata(externalClientAlbumId);
-    }
+app.notFound(async (ctx) => {
+  return ctx.json(
+    {
+      message: "Route not found 🤷‍♂️",
+    },
+    404
+  );
+});
 
-    return ctx.json(
-      {
-        message: "Album and Rekognition Collection deleted",
-      },
-      200
-    );
-  } catch (error) {
-    console.error("Error deleting album:", error);
+const port = 3000;
 
-    return ctx.json(
-      {
-        message: "Failed to delete album",
-        error: error instanceof Error ? error.message : String(error),
-      },
-      500
+// Start the server
+serve(
+  {
+    port,
+    fetch: app.fetch,
+  },
+  (address) => {
+    console.log(
+      `🔥 Server listening on http://${address.address}:${address.port}/api/docs`
     );
   }
-});
+);
+
+// Export the handler for AWS Lambda
+// export const handler = handle(app);
