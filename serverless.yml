@@ -70,6 +70,7 @@ functions:
           arn: !GetAtt FaceRecognitionQueue.Arn
           batchSize: 10
           maximumConcurrency: 2 # Limit the number of concurrent executions
+          maximumBatchingWindow: 60 # Maximum time to wait for the batch to be filled
     environment:
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
 
@@ -117,8 +118,8 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-queue
-        ReceiveMessageWaitTimeSeconds: 20
-        VisibilityTimeout: 90
+        ReceiveMessageWaitTimeSeconds: 20 # Tempo máximo que o consumidor ficará esperando por mensagens
+        VisibilityTimeout: 90 # Tempo máximo que a mensagem ficará oculta após ser lida por um consumidor
 
     FaceRecognitionQueuePolicy:
       Type: AWS::SQS::QueuePolicy

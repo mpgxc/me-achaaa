@@ -1,5 +1,6 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { RekognitionClient } from "@aws-sdk/client-rekognition";
+import { S3Client } from "@aws-sdk/client-s3";
 
 export class RekognitionSingleton {
   private static instance: RekognitionClient;
@@ -49,5 +50,31 @@ export class DynamoSingleton extends DynamoDBClient {
    */
   get tableName() {
     return "infra-face-rekognition-sls-dev-rekognition-bucket-assets-controll";
+  }
+}
+
+export class S3Singleton extends S3Client {
+  private static instance: S3Singleton;
+
+  private constructor() {
+    super({
+      region: "us-east-1",
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
+    });
+  }
+
+  public static getInstance(): S3Singleton {
+    if (!S3Singleton.instance) {
+      S3Singleton.instance = new S3Singleton();
+    }
+
+    return S3Singleton.instance;
+  }
+
+  get bucketName() {
+    return "infra-face-rekognition-sls-dev-bucket";
   }
 }
