@@ -42,3 +42,6 @@ _meta
 .serverless
 
 build/
+
+*.jpg
+*.png
