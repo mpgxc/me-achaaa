@@ -1,6 +1,6 @@
 import { IndexFacesCommand } from "@aws-sdk/client-rekognition";
 import { S3Event, SQSEvent } from "aws-lambda";
-import { RekognitionSingleton } from "../rekognition.js";
+import { RekognitionSingleton } from "../providers.js";
 
 const client = RekognitionSingleton.getInstance();
 
