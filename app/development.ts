@@ -112,8 +112,12 @@ async function faceSearchByImage(
 
 (async () => {
   {
+    // const output = await deleteCollection(
+    //   "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+    // );
+
+    const output = await listCollections();
     /*
-      const output = await listCollections();
 
 
       const output = await faceSearchByFaceId(
@@ -123,8 +127,7 @@ async function faceSearchByImage(
 
         console.table(output);
         */
-    const output = await listFacesInCollection(collectionId);
-    // const output = await deleteCollection(collectionId);
+    // const output = await listFacesInCollection(collectionId);
     // const output = await createCollection(collectionId);
     // const filename = __dirname + "/images/4.jpg";
     // const image = await readFile(filename);
