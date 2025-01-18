@@ -1,94 +1,123 @@
 import {
-  RekognitionClient,
+  DetectFacesCommand,
   SearchFacesByImageCommand,
 } from "@aws-sdk/client-rekognition";
-import { Hono } from "hono";
-import { handle } from "hono/aws-lambda";
-import { bodyLimit } from "hono/body-limit";
+import { APIGatewayProxyEvent } from "aws-lambda";
+import { RekognitionSingleton } from "../providers";
 
-const rekognition = new RekognitionClient({
-  region: "us-east-1",
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
-});
+const rekognition = RekognitionSingleton.getInstance();
 
-const COLLECTION_ID = process.env.REKOGNITION_COLLECTION!;
-
-const app = new Hono();
-
-app.get("/", (c) =>
-  c.json({
-    message: "Hello, human! 🦆 You are so far from home",
-  })
-);
-
-app.notFound((c) =>
-  c.json(
-    {
-      error: "Not Found 🦆",
+const verifyHowManyFacesInPicture = async (file: Buffer) => {
+  const command = new DetectFacesCommand({
+    Image: {
+      Bytes: file,
     },
-    404
-  )
-);
+  });
 
-app.post(
-  "/upload",
-  bodyLimit({
-    maxSize: 5 * 1024 * 1024,
-    onError: (c) => {
-      return c.json(
-        {
-          message: "O tamanho máximo do arquivo é de 5MB",
-        },
-        413
-      );
-    },
-  }),
-  async (ctx) => {
-    const body = await ctx.req.parseBody();
-    const file = body["file"] as File;
+  const output = await rekognition.send(command);
 
-    try {
-      const searchFacesOutput = await searchFacesByImage(COLLECTION_ID, file);
+  return output.FaceDetails?.length || 0;
+};
 
-      const matchedImages =
-        searchFacesOutput.FaceMatches?.map(
-          (face) => face.Face?.ExternalImageId
-        ) || [];
-
-      return ctx.json({
-        message: "Imagem processada com sucesso!",
-        matched_images: matchedImages,
-      });
-    } catch (e) {
-      const error = e as Error;
-
-      console.error(`Erro ao processar a imagem: ${error}`);
-
-      return ctx.json(
-        {
-          message: "Erro ao processar a imagem",
-          error: error.message,
-        },
-        500
-      );
-    }
-  }
-);
-
-const searchFacesByImage = async (CollectionId: string, file: File) => {
+const searchFacesByImage = async (CollectionId: string, file: Buffer) => {
   const command = new SearchFacesByImageCommand({
     CollectionId,
     Image: {
-      Bytes: await file.bytes(),
+      Bytes: file,
     },
     FaceMatchThreshold: 90,
-    MaxFaces: 1,
   });
 
   return rekognition.send(command);
 };
 
-export const handler = handle(app);
+const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024;
+
+export const handler = async (event: APIGatewayProxyEvent) => {
+  try {
+    const collectionId = event.headers["x-collection-id"]!;
+
+    if (!collectionId) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: "O cabeçalho x-collection-id é obrigatório.",
+        }),
+      };
+    }
+
+    const payloadSize = Buffer.byteLength(event.body!, "utf8");
+
+    if (payloadSize > MAX_PAYLOAD_SIZE) {
+      return {
+        statusCode: 413,
+        body: JSON.stringify({
+          message: "O tamanho do payload excede o limite de 5 MB.",
+        }),
+      };
+    }
+
+    const imageBase64 = event.body;
+
+    if (!imageBase64 || !collectionId) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          principalId: "user",
+          message:
+            "Parâmetros inválidos: imageBase64 e collectionId são obrigatórios.",
+        }),
+      };
+    }
+
+    const file = Buffer.from(
+      imageBase64.replace("data:image/jpeg;base64,", ""),
+      "base64"
+    );
+
+    const facesCount = await verifyHowManyFacesInPicture(file);
+
+    if (facesCount === 0) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: "Nenhuma face encontrada na imagem.",
+        }),
+      };
+    }
+
+    if (facesCount > 1) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: "Mais de uma face encontrada na imagem.",
+        }),
+      };
+    }
+
+    const searchFacesOutput = await searchFacesByImage(collectionId, file);
+
+    const images =
+      searchFacesOutput.FaceMatches?.map(
+        (face) => face.Face?.ExternalImageId
+      ) || [];
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        images,
+      }),
+    };
+  } catch (e) {
+    const error = e as Error;
+
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        message:
+          error.message ||
+          "Erro interno. Não foi possível processar a requisição.",
+      }),
+    };
+  }
+};
