@@ -91,7 +91,9 @@ const cropFacesEventHandler = async (
       return;
     }
 
-    const { ExternalImageId } = extractExternalImageId(s3.object.key);
+    const { ExternalImageId, CollectionId } = extractExternalImageId(
+      s3.object.key
+    );
 
     for (const { Face } of faces) {
       const { FaceId, BoundingBox } = Face!;
@@ -100,7 +102,7 @@ const cropFacesEventHandler = async (
         continue;
       }
 
-      const border = 10;
+      const border = 80;
 
       const left = Math.floor(BoundingBox.Left! * (metadata.width + border));
       const top = Math.floor(BoundingBox.Top! * (metadata.height + border));
@@ -120,7 +122,7 @@ const cropFacesEventHandler = async (
 
       const command = new PutObjectCommand({
         Bucket: s3.bucket.name,
-        Key: `uploads/${ExternalImageId}/faces/${FaceId}.jpg`,
+        Key: `uploads/${CollectionId}/faces/${FaceId}.jpg`,
         Body: croppedImage,
         ContentType: "image/jpeg",
       });
