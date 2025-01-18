@@ -315,7 +315,7 @@
       "containerId": "UWfg5A0Nh-eZj56bLIFD_",
       "originalText": "API",
       "lineHeight": 1.25,
-      "baseline": 19
+      "baseline": 21
     },
     {
       "type": "ellipse",
@@ -405,7 +405,7 @@
       "containerId": "vXlU5IYCWV4o_GkHrNjKM",
       "originalText": "S3 Bucket",
       "lineHeight": 1.25,
-      "baseline": 44
+      "baseline": 46
     },
     {
       "type": "arrow",
@@ -498,7 +498,7 @@
       "containerId": "kWbkufCMX8U6pF3obQDuI",
       "originalText": "presigned link upload",
       "lineHeight": 1.25,
-      "baseline": 19
+      "baseline": 21
     },
     {
       "type": "arrow",
@@ -591,7 +591,7 @@
       "containerId": "dcu_Su3fEJJcA2VO6_bcw",
       "originalText": "request",
       "lineHeight": 1.25,
-      "baseline": 19
+      "baseline": 21
     },
     {
       "type": "rectangle",
@@ -677,7 +677,7 @@
       "containerId": "gl4ZYDFSP15HaSMGaaS45",
       "originalText": "Cloud Front",
       "lineHeight": 1.25,
-      "baseline": 44
+      "baseline": 46
     },
     {
       "type": "arrow",
@@ -774,7 +774,7 @@
       "containerId": "H8BrVrDz8y9Y2gpu0ZPeV",
       "originalText": "read",
       "lineHeight": 1.25,
-      "baseline": 19
+      "baseline": 21
     },
     {
       "type": "arrow",
@@ -932,7 +932,7 @@
       "containerId": "Q4gc68sqK4cjv0QbCjsWf",
       "originalText": "Lambda Face Recognition\nProcessing\nIndexing",
       "lineHeight": 1.25,
-      "baseline": 69
+      "baseline": 71
     },
     {
       "type": "arrow",
@@ -1025,7 +1025,7 @@
       "containerId": "85Ys1Qc4w5FqGJQgvREmA",
       "originalText": "triggers",
       "lineHeight": 1.25,
-      "baseline": 19
+      "baseline": 21
     },
     {
       "type": "arrow",
@@ -1122,7 +1122,7 @@
       "containerId": "BjpHBwb56iIv5I6y_u-Xk",
       "originalText": "Salva Imagens",
       "lineHeight": 1.25,
-      "baseline": 19
+      "baseline": 21
     },
     {
       "type": "ellipse",
@@ -1216,7 +1216,7 @@
       "containerId": "2T8rKe2814ZitQ8ABnv1p",
       "originalText": "Dynamodb",
       "lineHeight": 1.25,
-      "baseline": 19
+      "baseline": 21
     },
     {
       "type": "arrow",
@@ -1272,8 +1272,8 @@
     },
     {
       "type": "text",
-      "version": 320,
-      "versionNonce": 973082608,
+      "version": 322,
+      "versionNonce": 1180970367,
       "isDeleted": false,
       "id": "H9NsT-0z_Or6nbB0XoKgm",
       "fillStyle": "cross-hatch",
@@ -1286,7 +1286,7 @@
       "y": -364.8045677468898,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
-      "width": 866.2117309570312,
+      "width": 866.2075805664062,
       "height": 175,
       "seed": 1645610921,
       "groupIds": [],
@@ -1298,7 +1298,7 @@
           "type": "arrow"
         }
       ],
-      "updated": 1737066761843,
+      "updated": 1737146741344,
       "link": null,
       "locked": false,
       "fontSize": 28,
@@ -1402,7 +1402,7 @@
       "containerId": "udxagMM4y4RcwJX5TO_K-",
       "originalText": "registra",
       "lineHeight": 1.25,
-      "baseline": 27
+      "baseline": 29
     },
     {
       "type": "rectangle",
@@ -1480,12 +1480,12 @@
       "containerId": "m_QmFN-8QPCLa6poYOIxh",
       "originalText": "{\n  \"CollectionId\": \"collection_001\",\n  \"ImageId\": \"image_123\",\n  \"imageBucketKey\": \"user/album_001/image_123.jpg\",\n  \"faces\": [\n    {\n      \"faceId\": \"face_001\",\n      \"faceBucketKey\": \"user/album_001/faces/face_001.jpg\"\n    },\n    {\n      \"faceId\": \"face_002\",\n      \"faceBucketKey\": \"user/album_001/faces/face_002.jpg\"\n    }\n  ],\n  \"CreatedAt\": \"2025-01-16T05:56:10Z\"\n}",
       "lineHeight": 1.2,
-      "baseline": 378
+      "baseline": 380
     },
     {
       "type": "text",
-      "version": 733,
-      "versionNonce": 1693339417,
+      "version": 735,
+      "versionNonce": 1667149297,
       "isDeleted": false,
       "id": "HKSprgg7eUsW_ifVXh22e",
       "fillStyle": "cross-hatch",
@@ -1507,7 +1507,7 @@
       "frameId": null,
       "roundness": null,
       "boundElements": [],
-      "updated": 1737051719079,
+      "updated": 1737146741349,
       "link": null,
       "locked": false,
       "fontSize": 20,
@@ -1518,7 +1518,7 @@
       "containerId": null,
       "originalText": "RekognitionBucketAssetsControll",
       "lineHeight": 1.2,
-      "baseline": 18
+      "baseline": 19
     },
     {
       "type": "arrow",
@@ -1648,7 +1648,7 @@
       "containerId": "rN-eKtqLKPCIeNBE4K6I8",
       "originalText": "Queue",
       "lineHeight": 1.25,
-      "baseline": 19
+      "baseline": 21
     },
     {
       "type": "arrow",
@@ -1741,7 +1741,7 @@
       "containerId": "3ABZ4_iw1DlEw_FQkhR7K",
       "originalText": "triggers",
       "lineHeight": 1.25,
-      "baseline": 19
+      "baseline": 21
     },
     {
       "type": "rectangle",
@@ -1859,7 +1859,7 @@
       "containerId": "XPbCL7aNh7YoybTYrCL2h",
       "originalText": "Lambda Face Recognition\n\nFaceSearchByImage",
       "lineHeight": 1.25,
-      "baseline": 69
+      "baseline": 71
     },
     {
       "type": "rectangle",
@@ -1977,7 +1977,7 @@
       "containerId": "uPa5g0i5OTQzp4-Z7h2yV",
       "originalText": "Lambda Face Recognition\n\nFaceSearchById",
       "lineHeight": 1.25,
-      "baseline": 69
+      "baseline": 71
     },
     {
       "type": "ellipse",
@@ -2051,7 +2051,7 @@
       "containerId": "tiBXt1l-fWtEsJvLIOxE8",
       "originalText": "Rekognition",
       "lineHeight": 1.25,
-      "baseline": 19
+      "baseline": 21
     },
     {
       "type": "arrow",
