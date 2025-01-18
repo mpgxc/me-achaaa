@@ -40,12 +40,6 @@ provider:
         - "dynamodb:Query"
       Resource:
         - "*"
-  httpApi:
-    payload: "3.0"
-  apiGateway:
-    binaryMediaTypes:
-      - "image/jpeg"
-      - "image/png"
 
 custom:
   defaultStage: dev
