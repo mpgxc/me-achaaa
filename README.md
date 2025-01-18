@@ -1,3 +1,11 @@
+Ideias 💡
+
+Ter um função para gerar os rostos únicos de referências para as pesquisas fotos dentro dos albums.
+
+- Utilizar das fotos das pessoas em que elas aparecem sozinhas (Ajuda a conseguir um bom recorte dp rosto e área da cabeça)
+
+---
+
 Amazon Rekognition
 
 - SearchFacesByImage
