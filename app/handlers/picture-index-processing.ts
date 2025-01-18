@@ -91,9 +91,7 @@ const cropFacesEventHandler = async (
       return;
     }
 
-    const { ExternalImageId, CollectionId } = extractExternalImageId(
-      s3.object.key
-    );
+    const { CollectionId } = extractExternalImageId(s3.object.key);
 
     for (const { Face } of faces) {
       const { FaceId, BoundingBox } = Face!;

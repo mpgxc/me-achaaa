@@ -1,10 +1,1 @@
-{
-  "root": [
-    "./app/handlers/image-face-crop.ts",
-    "./app/handlers/image-indexer.ts",
-    "./app/handlers/image-search.ts",
-    "./app/hybrid/rekognition-collection-manager.ts",
-    "./app/hybrid/rekognition.api.ts"
-  ],
-  "version": "5.7.3"
-}
+{"root":["./app/development.ts","./app/providers.ts","./app/handlers/picture-index-processing.ts","./app/handlers/picture-search.ts","./app/handlers/picture-album-manager/commons.ts","./app/handlers/picture-album-manager/picture-album-management.service.ts","./app/handlers/picture-album-manager/picture-album-manager.handler.ts","./app/handlers/picture-album-manager/picture-album-manager.openapi.ts","./app/handlers/picture-album-manager/picture-album-manager.routes.ts","./app/hybrid/rekognition-collection-manager.ts","./app/hybrid/rekognition.api.ts","./app/hybrid/methods/image-face-crop.ts","./app/hybrid/methods/image-indexer.ts","./app/hybrid/methods/image-search.ts"],"version":"5.7.3"}
