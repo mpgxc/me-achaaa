@@ -2,6 +2,16 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { RekognitionClient } from "@aws-sdk/client-rekognition";
 import { S3Client } from "@aws-sdk/client-s3";
 
+const credentials = {
+  region: "us-east-1",
+  /*
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    },
+  */
+};
+
 export class RekognitionSingleton {
   private static instance: RekognitionClient;
 
@@ -11,13 +21,7 @@ export class RekognitionSingleton {
 
   public static getInstance(): RekognitionClient {
     if (!RekognitionSingleton.instance) {
-      RekognitionSingleton.instance = new RekognitionClient({
-        region: "us-east-1",
-        credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-        },
-      });
+      RekognitionSingleton.instance = new RekognitionClient(credentials);
     }
 
     return RekognitionSingleton.instance;
@@ -28,13 +32,7 @@ export class DynamoSingleton extends DynamoDBClient {
   private static instance: DynamoSingleton;
 
   private constructor() {
-    super({
-      region: "us-east-1",
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      },
-    });
+    super(credentials);
   }
 
   public static getInstance(): DynamoSingleton {
@@ -57,13 +55,7 @@ export class S3Singleton extends S3Client {
   private static instance: S3Singleton;
 
   private constructor() {
-    super({
-      region: "us-east-1",
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      },
-    });
+    super(credentials);
   }
 
   public static getInstance(): S3Singleton {
