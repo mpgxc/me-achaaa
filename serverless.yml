@@ -98,12 +98,13 @@ functions:
     description: Finds similar faces in the Rekognition collection
     maximumRetryAttempts: 0
     events:
-      - http:
-          method: ANY
-          path: /
-      - http:
-          method: ANY
-          path: "{proxy+}"
+      - httpApi: POST /search
+      # - http:
+      #     method: ANY
+      #     path: /
+      # - http:
+      #     method: ANY
+      #     path: "{proxy+}"
     environment:
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
 
