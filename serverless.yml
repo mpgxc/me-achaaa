@@ -33,6 +33,7 @@ provider:
         # S3
         - "s3:GetObject"
         - "s3:PutObject"
+        - "s3:DeleteObject"
         # DynamoDB
         - "dynamodb:PutItem"
         - "dynamodb:GetItem"
@@ -58,10 +59,23 @@ custom:
     httpPort: 4000
   REKOGNITION_COLLECTION: ${self:service}-${self:provider.stage}-collection
 
+layers:
+  sharpLayer:
+    path: layers/sharp
+    name: ${self:provider.stage}-sharp
+    description: A layer for the sharp package
+    package:
+      include:
+        - node_modules/**
+    compatibleRuntimes:
+      - nodejs14.x
+    compatibleArchitectures:
+      - x86_64
+
 functions:
   DetectAndIndexFaces:
-    handler: build/handlers/image-indexer.handler
-    memorySize: 128
+    handler: build/handlers/picture-index-processing.handler
+    memorySize: 256
     timeout: 60
     description: Detects faces and indexes them in the Rekognition collection
     maximumRetryAttempts: 0
@@ -71,11 +85,14 @@ functions:
           batchSize: 10
           maximumConcurrency: 2 # Limit the number of concurrent executions
           maximumBatchingWindow: 60 # Maximum time to wait for the batch to be filled
+    layers:
+      - { Ref: SharpLayerLambdaLayer }
+
     environment:
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
 
   FindSimilarFaces:
-    handler: build/app.handler
+    handler: build/handlers/picture-search.handler
     memorySize: 128
     timeout: 10
     description: Finds similar faces in the Rekognition collection
