@@ -1,11 +1,17 @@
 import { FaceRecord, IndexFacesCommand } from "@aws-sdk/client-rekognition";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { SendMessageBatchCommand } from "@aws-sdk/client-sqs";
 import { S3Event, S3EventRecord, SQSEvent } from "aws-lambda";
 import sharp from "sharp";
-import { RekognitionSingleton, S3Singleton } from "../providers.js";
+import {
+  RekognitionSingleton,
+  S3Singleton,
+  SqsSingleton,
+} from "../providers.js";
 
 const rekognition = RekognitionSingleton.getInstance();
 const s3Client = S3Singleton.getInstance();
+const sqsClient = SqsSingleton.getInstance();
 
 const extractExternalImageId = (key: string) => {
   const [, CollectionId, ExternalImageId] = key.split("/");
@@ -82,6 +88,7 @@ const cropFacesEventHandler = async (
     if (!Body) {
       throw new Error("Failed to retrieve image body from S3.");
     }
+
     const image = await Body.transformToByteArray();
     const metadata = await sharp(image).metadata();
 
@@ -100,22 +107,25 @@ const cropFacesEventHandler = async (
         continue;
       }
 
-      const border = 80;
+      const left = Math.round(BoundingBox.Left! * metadata.width);
+      const top = Math.round(BoundingBox.Top! * metadata.height);
 
-      const left = Math.floor(BoundingBox.Left! * (metadata.width + border));
-      const top = Math.floor(BoundingBox.Top! * (metadata.height + border));
-      const width = Math.floor(BoundingBox.Width! * (metadata.width + border));
-      const height = Math.floor(
-        BoundingBox.Height! * (metadata.height + border)
+      const right = Math.round(
+        (BoundingBox.Left! + BoundingBox.Width!) * metadata.width
+      );
+
+      const bottom = Math.round(
+        (BoundingBox.Top! + BoundingBox.Height!) * metadata.height
       );
 
       const croppedImage = await sharp(image)
         .extract({
-          top,
           left,
-          width,
-          height,
+          top,
+          width: right - left,
+          height: bottom - top,
         })
+
         .toBuffer();
 
       const command = new PutObjectCommand({
@@ -141,6 +151,11 @@ const cropFacesEventHandler = async (
 };
 
 export const handler = async ({ Records }: SQSEvent): Promise<void> => {
+  const images: Array<{
+    s3Key: string;
+    imageId: string;
+  }> = [];
+
   for (const { body } of Records) {
     try {
       const { Records } = JSON.parse(body) as S3Event;
@@ -150,20 +165,121 @@ export const handler = async ({ Records }: SQSEvent): Promise<void> => {
       const faces = await rekognitionEventHandler(s3);
 
       if (!faces.length) {
-        return;
+        console.warn(`No faces found for S3 object <${s3.object.key}>.`);
+        continue;
       }
+
+      await publishMetadataOnQueue({
+        s3Key: s3.object.key,
+        images: faces,
+        isFace: true,
+      });
+
+      images.push({
+        s3Key: s3.object.key,
+        imageId: faces[0].Face?.ImageId!,
+      });
 
       await cropFacesEventHandler(s3, faces);
     } catch (e) {
-      const error = e as Error;
-
       console.error(
         `Root: Error processing S3 event: ${
-          error.message || JSON.stringify(error)
+          e instanceof Error ? e.message : JSON.stringify(e)
         }`
       );
+    } finally {
+      await publishMetadataOnQueue({ images });
 
-      continue;
+      console.log("Processing finished.");
     }
   }
+};
+
+const publishMetadataOnQueue = async ({
+  s3Key,
+  images,
+  isFace = false,
+}: {
+  s3Key?: string;
+  images:
+    | FaceRecord[]
+    | Array<{
+        s3Key: string;
+        imageId: string;
+      }>;
+  isFace?: boolean;
+}) => {
+  console.log("publishMetadataOnQueue", { s3Key, images, isFace });
+
+  if (isFace) {
+    const { CollectionId } = extractExternalImageId(s3Key!);
+
+    const messages = chunkArray(images as FaceRecord[], 10);
+
+    for (const message of messages) {
+      const command = new SendMessageBatchCommand({
+        QueueUrl: sqsClient.queueUrl,
+        Entries: message.map(({ Face }) => {
+          const { FaceId, ImageId } = Face!;
+
+          return {
+            Id: FaceId!,
+            MessageGroupId: CollectionId,
+            MessageBody: JSON.stringify({
+              isFace,
+              ImageId,
+              CollectionId,
+              FaceId,
+            }),
+          };
+        }),
+      });
+
+      await sqsClient.send(command);
+    }
+  } else {
+    const messages = chunkArray(
+      images as Array<{
+        s3Key: string;
+        imageId: string;
+      }>,
+      10
+    );
+
+    for (const message of messages) {
+      const command = new SendMessageBatchCommand({
+        QueueUrl: sqsClient.queueUrl,
+        Entries: message.map(({ s3Key, imageId }) => {
+          const { CollectionId, ExternalImageId } =
+            extractExternalImageId(s3Key);
+          return {
+            Id: imageId,
+            MessageGroupId: CollectionId,
+            MessageBody: JSON.stringify({
+              isFace,
+              ImageId: imageId,
+              CollectionId,
+              ExternalImageId,
+            }),
+          };
+        }),
+      });
+
+      await sqsClient.send(command);
+    }
+  }
+};
+
+const chunkArray = <T>(array: T[], chunkSize: number): T[][] => {
+  if (chunkSize <= 0) {
+    return [];
+  }
+
+  const chunks: T[][] = [];
+
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+
+  return chunks;
 };

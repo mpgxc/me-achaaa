@@ -1,6 +1,7 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { RekognitionClient } from "@aws-sdk/client-rekognition";
 import { S3Client } from "@aws-sdk/client-s3";
+import { SQSClient } from "@aws-sdk/client-sqs";
 
 const credentials = {
   region: "us-east-1",
@@ -68,5 +69,25 @@ export class S3Singleton extends S3Client {
 
   get bucketName() {
     return "infra-face-rekognition-sls-dev-bucket";
+  }
+}
+
+export class SqsSingleton extends SQSClient {
+  private static instance: SqsSingleton;
+
+  private constructor() {
+    super(credentials);
+  }
+
+  public static getInstance(): SqsSingleton {
+    if (!SqsSingleton.instance) {
+      SqsSingleton.instance = new SqsSingleton();
+    }
+
+    return SqsSingleton.instance;
+  }
+
+  get queueUrl() {
+    return process.env.ALBUM_SYNC_METADATA_QUEUE_URL!;
   }
 }

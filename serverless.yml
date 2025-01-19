@@ -40,6 +40,7 @@ provider:
         - "dynamodb:Query"
         # SQS
         - "sqs:SendMessage"
+        - "sqs:SendMessageBatch"
       Resource:
         - "*"
 
@@ -147,8 +148,6 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-album-sync-metadata-queue
-        ReceiveMessageWaitTimeSeconds: 20 # Tempo máximo que o consumidor ficará esperando por mensagens
-        VisibilityTimeout: 90 # Tempo máximo que a mensagem ficará oculta após ser lida por um consumidor
 
     FaceRecognitionQueuePolicy:
       Type: AWS::SQS::QueuePolicy

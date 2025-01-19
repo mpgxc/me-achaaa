@@ -11,7 +11,7 @@ import {
   SearchFacesCommand,
 } from "@aws-sdk/client-rekognition";
 
-const collectionId = "infra-face-rekognition-sls-dev-collection";
+const collectionId = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
 
 const client = new RekognitionClient({
   region: "us-east-1",
@@ -121,7 +121,7 @@ async function faceSearchByImage(
 
 
       const output = await faceSearchByFaceId(
-        "6a643cfb-b90c-4039-ad43-bef026ee54c9",
+        "6a643cfb-b90c-4039-ad43-bef026ee54c9",l
         collectionId
         );
 
