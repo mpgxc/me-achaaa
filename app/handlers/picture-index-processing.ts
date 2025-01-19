@@ -125,7 +125,6 @@ const cropFacesEventHandler = async (
           width: right - left,
           height: bottom - top,
         })
-
         .toBuffer();
 
       const command = new PutObjectCommand({
@@ -145,8 +144,6 @@ const cropFacesEventHandler = async (
         2
       )}`
     );
-
-    throw error;
   }
 };
 
