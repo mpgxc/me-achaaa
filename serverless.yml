@@ -38,6 +38,8 @@ provider:
         - "dynamodb:PutItem"
         - "dynamodb:GetItem"
         - "dynamodb:Query"
+        # SQS
+        - "sqs:SendMessage"
       Resource:
         - "*"
 
@@ -84,6 +86,7 @@ functions:
 
     environment:
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
+      ALBUM_SYNC_METADATA_QUEUE_URL: !Ref AlbumSyncMetadataQueue
 
   FindSimilarFaces:
     handler: build/handlers/picture-search.handler
@@ -93,14 +96,21 @@ functions:
     maximumRetryAttempts: 0
     events:
       - httpApi: POST /search
-      # - http:
-      #     method: ANY
-      #     path: /
-      # - http:
-      #     method: ANY
-      #     path: "{proxy+}"
     environment:
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
+
+  SyncAlbumMetadata:
+    handler: build/handlers/album-sync-metadata.handler
+    memorySize: 512
+    timeout: 10
+    description: Syncs the dynamodb metadata of the album with the Rekognition collection
+    maximumRetryAttempts: 1
+    events:
+      - sqs:
+          arn: !GetAtt AlbumSyncMetadataQueue.Arn
+          batchSize: 1000
+          maximumConcurrency: 2
+          maximumBatchingWindow: 60
 
 resources:
   Resources:
@@ -130,6 +140,13 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-queue
+        ReceiveMessageWaitTimeSeconds: 20 # Tempo máximo que o consumidor ficará esperando por mensagens
+        VisibilityTimeout: 90 # Tempo máximo que a mensagem ficará oculta após ser lida por um consumidor
+
+    AlbumSyncMetadataQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-album-sync-metadata-queue
         ReceiveMessageWaitTimeSeconds: 20 # Tempo máximo que o consumidor ficará esperando por mensagens
         VisibilityTimeout: 90 # Tempo máximo que a mensagem ficará oculta após ser lida por um consumidor
 
