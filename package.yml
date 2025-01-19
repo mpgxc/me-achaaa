@@ -4,6 +4,7 @@ package:
   patterns:
     - "!node_modules/**"
     - "node_modules/zod/**"
+    - "node_modules/axios/**"
     - "node_modules/sharp/**"
     - "!app/**"
     - "!dist/**"

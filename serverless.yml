@@ -113,6 +113,20 @@ functions:
           maximumConcurrency: 2
           maximumBatchingWindow: 60
 
+  FailureNotification:
+    handler: build/handlers/failure-notification.handler
+    memorySize: 128
+    timeout: 10
+    description: Sends a notification when a message fails to be processed
+    maximumRetryAttempts: 0
+    events:
+      - sqs:
+          arn: !GetAtt FaceRecognitionQueueDLQ.Arn
+          batchSize: 10
+          maximumRetryAttempts: 0
+    layers:
+      - { Ref: SharpLayerLambdaLayer }
+
 resources:
   Resources:
     FaceRecognitionBucket:
@@ -143,6 +157,14 @@ resources:
         QueueName: ${self:service}-${self:provider.stage}-queue
         ReceiveMessageWaitTimeSeconds: 20 # Tempo máximo que o consumidor ficará esperando por mensagens
         VisibilityTimeout: 90 # Tempo máximo que a mensagem ficará oculta após ser lida por um consumidor
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt FaceRecognitionQueueDLQ.Arn
+          maxReceiveCount: 3
+
+    FaceRecognitionQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-queue-dlq
 
     AlbumSyncMetadataQueue:
       Type: AWS::SQS::Queue
