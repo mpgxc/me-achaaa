@@ -48,7 +48,6 @@
     "@hono/zod-openapi": "^0.18.3",
     "@scalar/hono-api-reference": "^0.5.166",
     "aws-lambda": "^1.0.7",
-    "axios": "^1.7.9",
     "dayjs": "^1.11.13",
     "hono": "^4.6.16",
     "pino": "^9.6.0",

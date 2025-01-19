@@ -41,9 +41,6 @@ importers:
       aws-lambda:
         specifier: ^1.0.7
         version: 1.0.7
-      axios:
-        specifier: ^1.7.9
-        version: 1.7.9
       dayjs:
         specifier: ^1.11.13
         version: 1.11.13
