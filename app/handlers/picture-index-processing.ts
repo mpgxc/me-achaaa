@@ -72,6 +72,44 @@ const rekognitionEventHandler = async (
   }
 };
 
+const getImageFromBucket = async (
+  s3: S3EventRecord["s3"]
+): Promise<Uint8Array> => {
+  const { Body } = await s3Client.send(
+    new GetObjectCommand({
+      Bucket: s3.bucket.name,
+      Key: s3.object.key,
+    })
+  );
+
+  return Body!.transformToByteArray();
+};
+
+const generateThumbnail = async (image: Uint8Array): Promise<Uint8Array> => {
+  const thumbnail = await sharp(image)
+    .resize({ width: 256, height: 256, fit: "inside" })
+    .toBuffer();
+
+  return thumbnail;
+};
+
+const generateThumbnailWithWaterMark = async (
+  image: Uint8Array
+): Promise<Uint8Array> => {
+  const watermarkPath = __dirname + "/watermark.png";
+  const thumbnail = await sharp(image)
+    .resize({ width: 256, height: 256, fit: "inside" })
+    .composite([
+      {
+        input: watermarkPath,
+        gravity: "southeast",
+      },
+    ])
+    .toBuffer();
+
+  return thumbnail;
+};
+
 const cropFacesEventHandler = async (
   s3: S3EventRecord["s3"],
   faces: FaceRecord[]
@@ -79,19 +117,61 @@ const cropFacesEventHandler = async (
   try {
     const croppeds: string[] = [];
 
-    const { Body } = await s3Client.send(
-      new GetObjectCommand({
-        Bucket: s3.bucket.name,
-        Key: s3.object.key,
-      })
-    );
-
-    const image = await Body!.transformToByteArray();
+    const image = await getImageFromBucket(s3);
 
     if (!image) {
       console.error("Failed to retrieve image from S3.");
 
       return [];
+    }
+
+    /**
+     * @todo Remover daqui e adicionar em um novo handler
+     */
+    {
+      const { CollectionId, ExternalImageId } = extractExternalImageId(
+        s3.object.key
+      );
+      const thumbnailPath = `uploads/${CollectionId}/thumbnails/${ExternalImageId}.jpg`;
+      const watermarkThumbnailPath = `uploads/${CollectionId}/thumbnails/${ExternalImageId}-watermark.jpg`;
+
+      await generateThumbnail(image).then(async (thumbnail) => {
+        const command = new PutObjectCommand({
+          Bucket: s3.bucket.name,
+          Key: thumbnailPath,
+          Body: thumbnail,
+          ContentType: "image/jpeg",
+        });
+
+        try {
+          await s3Client.send(command);
+          console.info(`Thumbnail uploaded to ${thumbnailPath}`);
+        } catch (error) {
+          console.error(
+            `Error uploading thumbnail to ${thumbnailPath}: ${error}`
+          );
+        }
+      });
+
+      await generateThumbnailWithWaterMark(image).then(async (thumbnail) => {
+        const command = new PutObjectCommand({
+          Bucket: s3.bucket.name,
+          Key: watermarkThumbnailPath,
+          Body: thumbnail,
+          ContentType: "image/jpeg",
+        });
+
+        try {
+          await s3Client.send(command);
+          console.info(
+            `Watermark thumbnail uploaded to ${watermarkThumbnailPath}`
+          );
+        } catch (error) {
+          console.error(
+            `Error uploading watermark thumbnail to ${watermarkThumbnailPath}: ${error}`
+          );
+        }
+      });
     }
 
     const metadata = await sharp(image).metadata();
