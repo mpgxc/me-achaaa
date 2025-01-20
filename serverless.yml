@@ -67,7 +67,7 @@ layers:
       include:
         - node_modules/**
     compatibleRuntimes:
-      - nodejs14.x
+      - nodejs20.x
     compatibleArchitectures:
       - x86_64
 
@@ -81,7 +81,8 @@ functions:
     events:
       - sqs:
           arn: !GetAtt FaceRecognitionQueue.Arn
-          batchSize: 10
+          batchSize: 10 # Processa 10 mensagens por vez
+          maximumBatchingWindow: 60 # Espera 60 segundos para juntar mensagens antes de chamar a função lambda
     layers:
       - { Ref: SharpLayerLambdaLayer }
 
@@ -108,9 +109,7 @@ functions:
     events:
       - sqs:
           arn: !GetAtt FaceRecognitionQueueDLQ.Arn
-          batchSize: 10
-    layers:
-      - { Ref: SharpLayerLambdaLayer }
+          batchSize: 1
 
 resources:
   Resources:
@@ -140,7 +139,7 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-queue
-        VisibilityTimeout: 150
+        VisibilityTimeout: 240
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt FaceRecognitionQueueDLQ.Arn
           maxReceiveCount: 1
@@ -149,6 +148,7 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-queue-dlq
+        VisibilityTimeout: 240
 
     FaceRecognitionQueuePolicy:
       Type: AWS::SQS::QueuePolicy
