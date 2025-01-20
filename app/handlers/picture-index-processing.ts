@@ -20,7 +20,6 @@ const dynamodb = DynamoSingleton.getInstance();
 
 const extractExternalImageId = (key: string) => {
   const [, CollectionId, ExternalImageId] = key.split("/");
-
   return {
     CollectionId,
     ExternalImageId,
@@ -33,9 +32,6 @@ const rekognitionEventHandler = async (s3: S3EventRecord["s3"]) => {
       `Processing S3 object <${s3.object.key}> from bucket <${s3.bucket.name}>`
     );
 
-    /**
-     * Extract the external image id from the S3 object key.
-     */
     const { ExternalImageId, CollectionId } = extractExternalImageId(
       s3.object.key
     );
@@ -57,23 +53,16 @@ const rekognitionEventHandler = async (s3: S3EventRecord["s3"]) => {
     const output = await rekognition.send(command);
 
     if (!output.FaceRecords || output.FaceRecords.length === 0) {
-      throw new Error(
-        `Indexer Handler: No faces were indexed for image <${s3.object.key}>.`
-      );
+      throw new Error(`No faces were indexed for image <${s3.object.key}>.`);
     }
 
     console.info(
-      `Indexer Handler: S3 object <${s3.object.key}> indexed successfully in collection <${CollectionId}>`
+      `S3 object <${s3.object.key}> indexed successfully in collection <${CollectionId}>`
     );
-
     return output.FaceRecords;
   } catch (error) {
     console.error(
-      `RekognitionEventHandler: Error processing S3 event: ${JSON.stringify(
-        error,
-        null,
-        2
-      )}`
+      `Error processing S3 event: ${JSON.stringify(error, null, 2)}`
     );
 
     throw error;
@@ -96,7 +85,7 @@ const cropFacesEventHandler = async (
     const metadata = await sharp(image).metadata();
 
     if (!metadata.width || !metadata.height) {
-      console.warn("Não foi possível obter as dimensões da imagem.");
+      console.warn("Image dimensions not available.");
 
       return;
     }
@@ -105,10 +94,7 @@ const cropFacesEventHandler = async (
 
     for (const { Face } of faces) {
       const { FaceId, BoundingBox } = Face!;
-
-      if (!BoundingBox || !FaceId) {
-        continue;
-      }
+      if (!BoundingBox || !FaceId) continue;
 
       const left = Math.round(BoundingBox.Left! * metadata.width);
       const top = Math.round(BoundingBox.Top! * metadata.height);
@@ -135,12 +121,10 @@ const cropFacesEventHandler = async (
     }
   } catch (error) {
     console.error(
-      `CropFacesEventHandler: Error processing S3 event: ${JSON.stringify(
-        error,
-        null,
-        2
-      )}`
+      `Error processing S3 event: ${JSON.stringify(error, null, 2)}`
     );
+
+    throw error;
   }
 };
 
@@ -159,19 +143,16 @@ export const handler = async ({ Records }: SQSEvent): Promise<void> => {
       const faces = await rekognitionEventHandler(s3);
 
       if (!faces.length) {
-        console.warn(
-          `Handler: No faces found for S3 object <${s3.object.key}>.`
-        );
+        console.warn(`No faces found for S3 object <${s3.object.key}>.`);
+
         continue;
       }
 
       await cropFacesEventHandler(s3, faces).catch((error) => {
         console.error(
-          `Handler: Error processing S3 event: ${JSON.stringify(
-            error,
-            null,
-            2
-          )}`
+          `Error cropping faces for S3 object <${s3.object.key}>: ${
+            error instanceof Error ? error.message : JSON.stringify(error)
+          }`
         );
       });
 
@@ -179,14 +160,20 @@ export const handler = async ({ Records }: SQSEvent): Promise<void> => {
         s3Key: decodeURIComponent(s3.object.key),
         faces: faces.map(({ Face }) => Face!),
       });
-    } catch (e) {
+    } catch (error) {
       console.error(
-        `Root: Error processing S3 event: ${
-          e instanceof Error ? e.message : JSON.stringify(e)
+        `Error processing S3 event: ${
+          error instanceof Error ? error.message : JSON.stringify(error)
         }`
       );
     } finally {
-      await registerImageMetadata(images);
+      await registerImageMetadata(images).catch((error) => {
+        console.error(
+          `Error registering image metadata: ${
+            error instanceof Error ? error.message : JSON.stringify(error)
+          }`
+        );
+      });
     }
   }
 };
@@ -236,35 +223,28 @@ const registerImageMetadata = async (
 };
 
 const registerFacesImageMetadata = async (
-  Faces: {
-    CollectionId: string;
-    faces: Face[];
-  }[]
+  Faces: { CollectionId: string; faces: Face[] }[]
 ) => {
-  const RequestItems = [];
-
-  for (const { CollectionId, faces } of Faces) {
-    for (const { FaceId, ImageId, ExternalImageId, Confidence } of faces) {
-      RequestItems.push({
-        PutRequest: {
-          Item: marshall({
-            PK: `ALBUM#${CollectionId}`,
-            SK: `FACE#${FaceId}`,
-            CollectionId,
-            ExternalImageId,
-            FaceId,
-            ImageId,
-            Confidence,
-            CreatedAt: new Date().toISOString(),
-          }),
-        },
-      });
-    }
-  }
+  const Items = Faces.flatMap(({ CollectionId, faces }) =>
+    faces.map(({ FaceId, ImageId, ExternalImageId, Confidence }) => ({
+      PutRequest: {
+        Item: marshall({
+          PK: `ALBUM#${CollectionId}`,
+          SK: `FACE#${FaceId}`,
+          CollectionId,
+          ExternalImageId,
+          FaceId,
+          ImageId,
+          Confidence,
+          CreatedAt: new Date().toISOString(),
+        }),
+      },
+    }))
+  );
 
   const command = new BatchWriteItemCommand({
     RequestItems: {
-      [dynamodb.tableName]: RequestItems,
+      [dynamodb.tableName]: Items,
     },
   });
 
