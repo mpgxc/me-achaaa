@@ -132,7 +132,7 @@ resources:
                 S3Key:
                   Rules:
                     - Name: prefix
-                      Value: uploads/
+                      Value: uploads/incoming/
                     - Name: suffix
                       Value: .jpg
 
