@@ -38,6 +38,8 @@ provider:
         - "dynamodb:PutItem"
         - "dynamodb:GetItem"
         - "dynamodb:Query"
+        - "dynamodb:UpdateItem"
+        - "dynamodb:BatchWriteItem"
         # SQS
         - "sqs:SendMessage"
         - "sqs:SendMessageBatch"
@@ -73,21 +75,18 @@ functions:
   DetectAndIndexFaces:
     handler: build/handlers/picture-index-processing.handler
     memorySize: 256
-    timeout: 60
+    timeout: 120
     description: Detects faces and indexes them in the Rekognition collection
     maximumRetryAttempts: 0
     events:
       - sqs:
           arn: !GetAtt FaceRecognitionQueue.Arn
           batchSize: 10
-          maximumConcurrency: 2 # Limit the number of concurrent executions
-          maximumBatchingWindow: 60 # Maximum time to wait for the batch to be filled
     layers:
       - { Ref: SharpLayerLambdaLayer }
 
     environment:
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
-      ALBUM_SYNC_METADATA_QUEUE_URL: !Ref AlbumSyncMetadataQueue
 
   FindSimilarFaces:
     handler: build/handlers/picture-search.handler
@@ -100,19 +99,6 @@ functions:
     environment:
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
 
-  SyncAlbumMetadata:
-    handler: build/handlers/album-sync-metadata.handler
-    memorySize: 512
-    timeout: 10
-    description: Syncs the dynamodb metadata of the album with the Rekognition collection
-    maximumRetryAttempts: 1
-    events:
-      - sqs:
-          arn: !GetAtt AlbumSyncMetadataQueue.Arn
-          batchSize: 1000
-          maximumConcurrency: 2
-          maximumBatchingWindow: 60
-
   FailureNotification:
     handler: build/handlers/failure-notification.handler
     memorySize: 128
@@ -123,7 +109,6 @@ functions:
       - sqs:
           arn: !GetAtt FaceRecognitionQueueDLQ.Arn
           batchSize: 10
-          maximumRetryAttempts: 0
     layers:
       - { Ref: SharpLayerLambdaLayer }
 
@@ -155,21 +140,15 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-queue
-        ReceiveMessageWaitTimeSeconds: 20 # Tempo máximo que o consumidor ficará esperando por mensagens
-        VisibilityTimeout: 90 # Tempo máximo que a mensagem ficará oculta após ser lida por um consumidor
+        VisibilityTimeout: 150
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt FaceRecognitionQueueDLQ.Arn
-          maxReceiveCount: 3
+          maxReceiveCount: 1
 
     FaceRecognitionQueueDLQ:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-queue-dlq
-
-    AlbumSyncMetadataQueue:
-      Type: AWS::SQS::Queue
-      Properties:
-        QueueName: ${self:service}-${self:provider.stage}-album-sync-metadata-queue
 
     FaceRecognitionQueuePolicy:
       Type: AWS::SQS::QueuePolicy

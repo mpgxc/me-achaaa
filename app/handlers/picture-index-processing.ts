@@ -1,17 +1,22 @@
-import { FaceRecord, IndexFacesCommand } from "@aws-sdk/client-rekognition";
+import { BatchWriteItemCommand } from "@aws-sdk/client-dynamodb";
+import {
+  Face,
+  FaceRecord,
+  IndexFacesCommand,
+} from "@aws-sdk/client-rekognition";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { SendMessageBatchCommand } from "@aws-sdk/client-sqs";
+import { marshall } from "@aws-sdk/util-dynamodb";
 import { S3Event, S3EventRecord, SQSEvent } from "aws-lambda";
 import sharp from "sharp";
 import {
+  DynamoSingleton,
   RekognitionSingleton,
   S3Singleton,
-  SqsSingleton,
 } from "../providers.js";
 
 const rekognition = RekognitionSingleton.getInstance();
 const s3Client = S3Singleton.getInstance();
-const sqsClient = SqsSingleton.getInstance();
+const dynamodb = DynamoSingleton.getInstance();
 
 const extractExternalImageId = (key: string) => {
   const [, CollectionId, ExternalImageId] = key.split("/");
@@ -43,6 +48,8 @@ const rekognitionEventHandler = async (s3: S3EventRecord["s3"]) => {
           Name: s3.object.key,
         },
       },
+      MaxFaces: 3,
+      QualityFilter: "HIGH",
       ExternalImageId,
       DetectionAttributes: ["ALL"],
     });
@@ -85,11 +92,7 @@ const cropFacesEventHandler = async (
       })
     );
 
-    if (!Body) {
-      throw new Error("Failed to retrieve image body from S3.");
-    }
-
-    const image = await Body.transformToByteArray();
+    const image = await Body!.transformToByteArray();
     const metadata = await sharp(image).metadata();
 
     if (!metadata.width || !metadata.height) {
@@ -109,21 +112,15 @@ const cropFacesEventHandler = async (
 
       const left = Math.round(BoundingBox.Left! * metadata.width);
       const top = Math.round(BoundingBox.Top! * metadata.height);
-
-      const right = Math.round(
-        (BoundingBox.Left! + BoundingBox.Width!) * metadata.width
-      );
-
-      const bottom = Math.round(
-        (BoundingBox.Top! + BoundingBox.Height!) * metadata.height
-      );
+      const width = Math.round(BoundingBox.Width! * metadata.width);
+      const height = Math.round(BoundingBox.Height! * metadata.height);
 
       const croppedImage = await sharp(image)
         .extract({
           left,
           top,
-          width: right - left,
-          height: bottom - top,
+          width,
+          height,
         })
         .toBuffer();
 
@@ -150,7 +147,7 @@ const cropFacesEventHandler = async (
 export const handler = async ({ Records }: SQSEvent): Promise<void> => {
   const images: Array<{
     s3Key: string;
-    imageId: string;
+    faces: Face[];
   }> = [];
 
   for (const { body } of Records) {
@@ -162,22 +159,26 @@ export const handler = async ({ Records }: SQSEvent): Promise<void> => {
       const faces = await rekognitionEventHandler(s3);
 
       if (!faces.length) {
-        console.warn(`No faces found for S3 object <${s3.object.key}>.`);
+        console.warn(
+          `Handler: No faces found for S3 object <${s3.object.key}>.`
+        );
         continue;
       }
 
-      await publishMetadataOnQueue({
-        s3Key: s3.object.key,
-        images: faces,
-        isFace: true,
+      await cropFacesEventHandler(s3, faces).catch((error) => {
+        console.error(
+          `Handler: Error processing S3 event: ${JSON.stringify(
+            error,
+            null,
+            2
+          )}`
+        );
       });
 
       images.push({
-        s3Key: s3.object.key,
-        imageId: faces[0].Face?.ImageId!,
+        s3Key: decodeURIComponent(s3.object.key),
+        faces: faces.map(({ Face }) => Face!),
       });
-
-      await cropFacesEventHandler(s3, faces);
     } catch (e) {
       console.error(
         `Root: Error processing S3 event: ${
@@ -185,98 +186,87 @@ export const handler = async ({ Records }: SQSEvent): Promise<void> => {
         }`
       );
     } finally {
-      await publishMetadataOnQueue({ images });
-
-      console.log("Processing finished.");
+      await registerImageMetadata(images);
     }
   }
 };
 
-const publishMetadataOnQueue = async ({
-  s3Key,
-  images,
-  isFace = false,
-}: {
-  s3Key?: string;
-  images:
-    | FaceRecord[]
-    | Array<{
-        s3Key: string;
-        imageId: string;
-      }>;
-  isFace?: boolean;
-}) => {
-  console.log("publishMetadataOnQueue", { s3Key, images, isFace });
+const registerImageMetadata = async (
+  images: Array<{
+    s3Key: string;
+    faces: Face[];
+  }>
+) => {
+  const allfaces = [] as {
+    CollectionId: string;
+    faces: Face[];
+  }[];
 
-  if (isFace) {
-    const { CollectionId } = extractExternalImageId(s3Key!);
+  const command = new BatchWriteItemCommand({
+    RequestItems: {
+      [dynamodb.tableName]: images.map(({ s3Key, faces }) => {
+        const { CollectionId, ExternalImageId } = extractExternalImageId(s3Key);
 
-    const messages = chunkArray(images as FaceRecord[], 10);
+        allfaces.push({ CollectionId, faces });
 
-    for (const message of messages) {
-      const command = new SendMessageBatchCommand({
-        QueueUrl: sqsClient.queueUrl,
-        Entries: message.map(({ Face }) => {
-          const { FaceId, ImageId } = Face!;
-
-          return {
-            Id: FaceId!,
-            MessageGroupId: CollectionId,
-            MessageBody: JSON.stringify({
-              isFace,
-              ImageId,
-              CollectionId,
-              FaceId,
-            }),
-          };
-        }),
-      });
-
-      await sqsClient.send(command);
-    }
-  } else {
-    const messages = chunkArray(
-      images as Array<{
-        s3Key: string;
-        imageId: string;
-      }>,
-      10
-    );
-
-    for (const message of messages) {
-      const command = new SendMessageBatchCommand({
-        QueueUrl: sqsClient.queueUrl,
-        Entries: message.map(({ s3Key, imageId }) => {
-          const { CollectionId, ExternalImageId } =
-            extractExternalImageId(s3Key);
-          return {
-            Id: imageId,
-            MessageGroupId: CollectionId,
-            MessageBody: JSON.stringify({
-              isFace,
-              ImageId: imageId,
-              CollectionId,
+        return {
+          PutRequest: {
+            Item: marshall({
+              PK: `ALBUM#${CollectionId}`,
+              SK: `IMAGE#${ExternalImageId}`,
               ExternalImageId,
+              Content: {
+                thumbnail: `${CollectionId}/thumbnails/${ExternalImageId}.jpg`,
+                original: `${CollectionId}/originals/${ExternalImageId}.jpg`,
+                faces: faces.map(
+                  ({ FaceId }) => `${CollectionId}/faces/${FaceId!}.jpg`
+                ),
+              },
+              CreatedAt: new Date().toISOString(),
             }),
-          };
-        }),
-      });
+          },
+        };
+      }),
+    },
+  });
 
-      await sqsClient.send(command);
-    }
-  }
+  await dynamodb.send(command);
+
+  await registerFacesImageMetadata(allfaces);
 };
 
-const chunkArray = <T>(array: T[], chunkSize: number): T[][] => {
-  if (chunkSize <= 0) {
-    return [];
+const registerFacesImageMetadata = async (
+  Faces: {
+    CollectionId: string;
+    faces: Face[];
+  }[]
+) => {
+  const RequestItems = [];
+
+  for (const { CollectionId, faces } of Faces) {
+    for (const { FaceId, ImageId, ExternalImageId, Confidence } of faces) {
+      RequestItems.push({
+        PutRequest: {
+          Item: marshall({
+            PK: `ALBUM#${CollectionId}`,
+            SK: `FACE#${FaceId}`,
+            CollectionId,
+            ExternalImageId,
+            FaceId,
+            ImageId,
+            Confidence,
+            CreatedAt: new Date().toISOString(),
+          }),
+        },
+      });
+    }
   }
 
-  const chunks: T[][] = [];
+  const command = new BatchWriteItemCommand({
+    RequestItems: {
+      [dynamodb.tableName]: RequestItems,
+    },
+  });
 
-  for (let i = 0; i < array.length; i += chunkSize) {
-    chunks.push(array.slice(i, i + chunkSize));
-  }
-
-  return chunks;
+  await dynamodb.send(command);
 };
