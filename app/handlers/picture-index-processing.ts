@@ -6,7 +6,7 @@ import {
 } from "@aws-sdk/client-rekognition";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { marshall } from "@aws-sdk/util-dynamodb";
-import { S3Event, S3EventRecord, SQSEvent } from "aws-lambda";
+import { S3Event, S3EventRecord, SQSBatchResponse, SQSEvent } from "aws-lambda";
 import sharp from "sharp";
 import {
   DynamoSingleton,
@@ -26,7 +26,9 @@ const extractExternalImageId = (key: string) => {
   };
 };
 
-const rekognitionEventHandler = async (s3: S3EventRecord["s3"]) => {
+const rekognitionEventHandler = async (
+  s3: S3EventRecord["s3"]
+): Promise<FaceRecord[]> => {
   try {
     console.info(
       `Processing S3 object <${s3.object.key}> from bucket <${s3.bucket.name}>`
@@ -53,27 +55,30 @@ const rekognitionEventHandler = async (s3: S3EventRecord["s3"]) => {
     const output = await rekognition.send(command);
 
     if (!output.FaceRecords || output.FaceRecords.length === 0) {
-      throw new Error(`No faces were indexed for image <${s3.object.key}>.`);
+      console.warn(`No faces were indexed for image <${s3.object.key}>.`);
     }
 
     console.info(
       `S3 object <${s3.object.key}> indexed successfully in collection <${CollectionId}>`
     );
-    return output.FaceRecords;
+
+    return output?.FaceRecords || [];
   } catch (error) {
     console.error(
       `Error processing S3 event: ${JSON.stringify(error, null, 2)}`
     );
 
-    throw error;
+    return [];
   }
 };
 
 const cropFacesEventHandler = async (
   s3: S3EventRecord["s3"],
   faces: FaceRecord[]
-) => {
+): Promise<string[]> => {
   try {
+    const croppeds: string[] = [];
+
     const { Body } = await s3Client.send(
       new GetObjectCommand({
         Bucket: s3.bucket.name,
@@ -82,64 +87,90 @@ const cropFacesEventHandler = async (
     );
 
     const image = await Body!.transformToByteArray();
+
+    if (!image) {
+      console.error("Failed to retrieve image from S3.");
+
+      return [];
+    }
+
     const metadata = await sharp(image).metadata();
 
     if (!metadata.width || !metadata.height) {
       console.warn("Image dimensions not available.");
 
-      return;
+      return [];
     }
 
     const { CollectionId } = extractExternalImageId(s3.object.key);
 
     for (const { Face } of faces) {
-      const { FaceId, BoundingBox } = Face!;
-      if (!BoundingBox || !FaceId) continue;
+      if (!Face || !Face.BoundingBox || !Face.FaceId) continue;
 
-      const left = Math.round(BoundingBox.Left! * metadata.width);
-      const top = Math.round(BoundingBox.Top! * metadata.height);
-      const width = Math.round(BoundingBox.Width! * metadata.width);
-      const height = Math.round(BoundingBox.Height! * metadata.height);
+      const { FaceId, BoundingBox } = Face;
+      const { Left, Top, Width, Height } = BoundingBox;
 
-      const croppedImage = await sharp(image)
-        .extract({
-          left,
-          top,
-          width,
-          height,
-        })
-        .toBuffer();
+      const left = Math.round(Left! * metadata.width);
+      const top = Math.round(Top! * metadata.height);
+      const width = Math.round(Width! * metadata.width);
+      const height = Math.round(Height! * metadata.height);
 
-      const command = new PutObjectCommand({
-        Bucket: s3.bucket.name,
-        Key: `uploads/${CollectionId}/faces/${FaceId}.jpg`,
-        Body: croppedImage,
-        ContentType: "image/jpeg",
-      });
+      try {
+        const croppedImage = await sharp(image)
+          .extract({
+            left,
+            top,
+            width,
+            height,
+          })
+          .toBuffer();
 
-      await s3Client.send(command);
+        {
+          const command = new PutObjectCommand({
+            Bucket: s3.bucket.name,
+            Key: `uploads/${CollectionId}/faces/${FaceId}.jpg`,
+            Body: croppedImage,
+            ContentType: "image/jpeg",
+          });
+
+          await s3Client.send(command);
+        }
+
+        croppeds.push(FaceId);
+      } catch (error) {
+        console.error(
+          `Error cropping face ${FaceId}: ${
+            error instanceof Error ? error.message : JSON.stringify(error)
+          }`
+        );
+      }
     }
+
+    return croppeds;
   } catch (error) {
     console.error(
       `Error processing S3 event: ${JSON.stringify(error, null, 2)}`
     );
 
-    throw error;
+    return [];
   }
 };
 
-export const handler = async ({ Records }: SQSEvent): Promise<void> => {
-  const images: Array<{
+export const handler = async ({
+  Records,
+}: SQSEvent): Promise<SQSBatchResponse> => {
+  const processedImages: Array<{
     s3Key: string;
     faces: Face[];
   }> = [];
 
-  for (const { body } of Records) {
+  const batchItemFailures: Array<{ itemIdentifier: string }> = [];
+
+  for (const { body, messageId } of Records) {
+    const { Records } = JSON.parse(body) as S3Event;
+    const [{ s3 }] = Records;
+
     try {
-      const { Records } = JSON.parse(body) as S3Event;
-
-      const [{ s3 }] = Records;
-
       const faces = await rekognitionEventHandler(s3);
 
       if (!faces.length) {
@@ -148,17 +179,13 @@ export const handler = async ({ Records }: SQSEvent): Promise<void> => {
         continue;
       }
 
-      await cropFacesEventHandler(s3, faces).catch((error) => {
-        console.error(
-          `Error cropping faces for S3 object <${s3.object.key}>: ${
-            error instanceof Error ? error.message : JSON.stringify(error)
-          }`
-        );
-      });
+      const croppeds = (await cropFacesEventHandler(s3, faces)) || [];
 
-      images.push({
+      processedImages.push({
         s3Key: decodeURIComponent(s3.object.key),
-        faces: faces.map(({ Face }) => Face!),
+        faces: faces
+          .filter(({ Face }) => croppeds.includes(Face?.FaceId!))
+          .map(({ Face }) => Face!),
       });
     } catch (error) {
       console.error(
@@ -166,16 +193,24 @@ export const handler = async ({ Records }: SQSEvent): Promise<void> => {
           error instanceof Error ? error.message : JSON.stringify(error)
         }`
       );
-    } finally {
-      await registerImageMetadata(images).catch((error) => {
-        console.error(
-          `Error registering image metadata: ${
-            error instanceof Error ? error.message : JSON.stringify(error)
-          }`
-        );
+
+      batchItemFailures.push({
+        itemIdentifier: messageId,
       });
+
+      continue;
     }
   }
+
+  await registerImageMetadata(processedImages).catch((error) => {
+    console.error(
+      `Error registering image metadata: ${
+        error instanceof Error ? error.message : JSON.stringify(error)
+      }`
+    );
+  });
+
+  return { batchItemFailures };
 };
 
 const registerImageMetadata = async (
@@ -223,7 +258,10 @@ const registerImageMetadata = async (
 };
 
 const registerFacesImageMetadata = async (
-  Faces: { CollectionId: string; faces: Face[] }[]
+  Faces: {
+    CollectionId: string;
+    faces: Face[];
+  }[]
 ) => {
   const Items = Faces.flatMap(({ CollectionId, faces }) =>
     faces.map(({ FaceId, ImageId, ExternalImageId, Confidence }) => ({

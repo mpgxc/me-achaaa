@@ -81,8 +81,9 @@ functions:
     events:
       - sqs:
           arn: !GetAtt FaceRecognitionQueue.Arn
-          batchSize: 10 # Processa 10 mensagens por vez
+          batchSize: 20
           maximumBatchingWindow: 60 # Espera 60 segundos para juntar mensagens antes de chamar a função lambda
+          functionResponseType: ReportBatchItemFailures # Retorna um relatório de falhas
     layers:
       - { Ref: SharpLayerLambdaLayer }
 
