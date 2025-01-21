@@ -149,7 +149,15 @@ resources:
                       Value: uploads/incoming/
                     - Name: suffix
                       Value: .jpg
-
+            - Event: s3:ObjectCreated:*
+              Queue: !GetAtt FaceRecognitionQueue.Arn
+              Filter:
+                S3Key:
+                  Rules:
+                    - Name: prefix
+                      Value: uploads/incoming/
+                    - Name: suffix
+                      Value: .jpeg
     ImageProcessingThumbnailsQueue:
       Type: AWS::SQS::Queue
       Properties:
