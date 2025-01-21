@@ -88,6 +88,6 @@ export class SqsSingleton extends SQSClient {
   }
 
   get queueUrl() {
-    return process.env.ALBUM_SYNC_METADATA_QUEUE_URL!;
+    return process.env.IMAGE_PROCESSING_THUMBNAIL!;
   }
 }
