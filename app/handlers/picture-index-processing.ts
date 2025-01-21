@@ -3,14 +3,20 @@ import {
   TransactWriteItemsCommand,
 } from "@aws-sdk/client-dynamodb";
 import { Face, IndexFacesCommand } from "@aws-sdk/client-rekognition";
+import { SendMessageCommand } from "@aws-sdk/client-sqs";
 import { marshall } from "@aws-sdk/util-dynamodb";
 import { S3Event, S3EventRecord, SQSBatchResponse, SQSEvent } from "aws-lambda";
-import { DynamoSingleton, RekognitionSingleton } from "../providers.js";
+import {
+  DynamoSingleton,
+  RekognitionSingleton,
+  SqsSingleton,
+} from "../providers";
 
 const TRANSACTIONS_LIMIT_PER_BATCH = 50;
 
 const rekognition = RekognitionSingleton.getInstance();
 const dynamodb = DynamoSingleton.getInstance();
+const sqsClient = SqsSingleton.getInstance();
 
 const extractExternalImageId = (key: string) => {
   const [CollectionId, ExternalImageId] = key
@@ -140,6 +146,17 @@ export const handler = async ({
       }`
     );
   });
+
+  {
+    const command = new SendMessageCommand({
+      QueueUrl: sqsClient.queueUrl,
+      MessageBody: JSON.stringify({
+        images: images.map(({ key }) => key),
+      }),
+    });
+
+    await sqsClient.send(command);
+  }
 
   return { batchItemFailures };
 };
