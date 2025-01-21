@@ -1,144 +1,92 @@
-import {
-  CreateCollectionCommand,
-  DeleteCollectionCommand,
-  Face,
-  FaceMatch,
-  IndexFacesCommand,
-  ListCollectionsCommand,
-  ListFacesCommand,
-  RekognitionClient,
-  SearchFacesByImageCommand,
-  SearchFacesCommand,
-} from "@aws-sdk/client-rekognition";
+import { DetectFacesCommand } from "@aws-sdk/client-rekognition";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 
-const collectionId = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
+import { randomUUID } from "crypto";
+import sharp from "sharp";
+import { RekognitionSingleton, S3Singleton } from "../providers";
 
-const client = new RekognitionClient({
-  region: "us-east-1",
-});
+const reko = RekognitionSingleton.getInstance();
+const s3c = S3Singleton.getInstance();
 
-async function listFacesInCollection(collectionId: string): Promise<Face[]> {
-  const command = new ListFacesCommand({
-    CollectionId: collectionId,
+async function extractFaceFromPicture(Key: string) {
+  const command = new GetObjectCommand({
+    Key,
+    Bucket: s3c.bucketName,
   });
 
-  const { Faces } = await client.send(command);
+  const { Body } = await s3c.send(command);
+  const image = await Body!.transformToByteArray();
+  const metadata = await sharp(image).metadata();
 
-  return Faces?.length ? Faces : [];
-}
-
-async function listCollections(): Promise<string[]> {
-  const command = new ListCollectionsCommand();
-
-  const { CollectionIds } = await client.send(command);
-
-  return CollectionIds || [];
-}
-
-async function faceSearchByFaceId(
-  FaceId: string,
-  CollectionId: string
-): Promise<FaceMatch[]> {
-  const command = new SearchFacesCommand({
-    FaceId,
-    CollectionId,
-    FaceMatchThreshold: 90,
-  });
-
-  const { FaceMatches } = await client.send(command);
-
-  if (!FaceMatches?.length) {
+  if (!metadata.width || !metadata.height) {
     return [];
   }
 
-  return FaceMatches;
-}
+  const { FaceDetails } = await reko.send(
+    new DetectFacesCommand({
+      Image: {
+        Bytes: image,
+      },
+    })
+  );
 
-async function indexFaces(
-  CollectionId: string,
-  ExternalImageId: string,
-  Bytes: Buffer
-): Promise<Face[]> {
-  const command = new IndexFacesCommand({
-    Image: {
-      Bytes,
-    },
-    CollectionId,
-    ExternalImageId,
-    DetectionAttributes: ["ALL"],
-  });
-
-  const { FaceRecords } = await client.send(command);
-
-  return FaceRecords?.length ? FaceRecords!.map(({ Face }) => Face!) : [];
-}
-
-async function deleteCollection(CollectionId: string): Promise<void> {
-  const command = new DeleteCollectionCommand({
-    CollectionId,
-  });
-
-  await client.send(command);
-}
-
-async function createCollection(CollectionId: string): Promise<void> {
-  const command = new CreateCollectionCommand({
-    CollectionId,
-  });
-
-  await client.send(command);
-}
-
-async function faceSearchByImage(
-  CollectionId: string,
-  Bytes: Buffer
-): Promise<FaceMatch[]> {
-  const command = new SearchFacesByImageCommand({
-    CollectionId,
-    Image: {
-      Bytes,
-    },
-    FaceMatchThreshold: 90,
-  });
-
-  const { FaceMatches } = await client.send(command);
-
-  if (!FaceMatches?.length) {
+  if (!FaceDetails?.length) {
     return [];
   }
 
-  return FaceMatches;
+  for (const { BoundingBox, Confidence, Quality } of FaceDetails) {
+    if (!BoundingBox) {
+      continue;
+    }
+
+    if (Confidence! < 90) {
+      continue;
+    }
+
+    if (!Quality || !Quality.Brightness || !Quality.Sharpness) {
+      continue;
+    }
+
+    if (Quality.Sharpness < 50 && Quality.Brightness < 90) {
+      continue;
+    }
+
+    const { Height, Width, Left, Top } = BoundingBox;
+
+    const params = {
+      left: Math.round(Left! * metadata.width!),
+      top: Math.round(Top! * metadata.height!),
+      width: Math.round(Width! * metadata.width!),
+      height: Math.round(Height! * metadata.height!),
+    };
+
+    const destination =
+      "outputs/" +
+      randomUUID() +
+      `_Sharpness--${Quality?.Sharpness}_Brightness--${Quality?.Brightness}_Confidence-${Confidence}.jpg`;
+
+    await sharp(image)
+      .extract(params)
+      /*
+        .resize(Math.min(params.width, 1024), Math.min(params.height, 1024), {
+          background: {
+            r: 255,
+            g: 255,
+            b: 255,
+            alpha: 1,
+          },
+          fit: "cover",
+        })
+      */
+      .toFormat("jpeg")
+      .toFile(destination);
+  }
 }
 
 (async () => {
   {
-    // const output = await deleteCollection(
-    //   "3fa85f64-5717-4562-b3fc-2c963f66afa6"
-    // );
-
-    const output = await listCollections();
-    /*
-
-
-      const output = await faceSearchByFaceId(
-        "6a643cfb-b90c-4039-ad43-bef026ee54c9",l
-        collectionId
-        );
-
-        console.table(output);
-        */
-    // const output = await listFacesInCollection(collectionId);
-    // const output = await createCollection(collectionId);
-    // const filename = __dirname + "/images/4.jpg";
-    // const image = await readFile(filename);
-    // const output = await indexFaces(
-    //   collectionId,
-    //   filename.split("/").pop()!,
-    //   image
-    // );
-    // const image = await readFile(__dirname + "/images/search/who.png");
-    // const output = await faceSearchByImage(collectionId, image);
-
-    console.info(output);
+    await extractFaceFromPicture(
+      "uploads/incoming/3fa85f64-5717-4562-b3fc-2c963f66afa6/7.jpg"
+    );
   }
 })();
