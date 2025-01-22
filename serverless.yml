@@ -90,9 +90,9 @@ functions:
       IMAGE_PROCESSING_THUMBNAIL: !Ref ImageProcessingThumbnailsQueue
 
   ImageThumbnailGenerator:
-    handler: build/handlers/image-thumnail-generator.handler
-    memorySize: 128
-    timeout: 10
+    handler: build/handlers/image-extract-face.handler
+    memorySize: 256
+    timeout: 300 # 5 minutos
     description: Generates a thumbnail for the uploaded image
     maximumRetryAttempts: 0
     events:
