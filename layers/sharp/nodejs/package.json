@@ -1,6 +1,6 @@
 {
-  "name": "sharp",
-  "dependencies": {
-    "sharp": "^0.33.5"
-  }
+	"name": "sharp",
+	"dependencies": {
+		"sharp": "^0.33.5"
+	}
 }

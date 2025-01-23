@@ -1,123 +1,132 @@
 import {
-  DetectFacesCommand,
-  SearchFacesByImageCommand,
+	DetectFacesCommand,
+	SearchFacesByImageCommand,
 } from "@aws-sdk/client-rekognition";
-import { APIGatewayProxyEvent } from "aws-lambda";
+import type { APIGatewayProxyEvent } from "aws-lambda";
 import { RekognitionSingleton } from "../providers";
 
 const rekognition = RekognitionSingleton.getInstance();
 
 const verifyHowManyFacesInPicture = async (file: Buffer) => {
-  const command = new DetectFacesCommand({
-    Image: {
-      Bytes: file,
-    },
-  });
+	const command = new DetectFacesCommand({
+		Image: {
+			Bytes: file,
+		},
+	});
 
-  const output = await rekognition.send(command);
+	const output = await rekognition.send(command);
 
-  return output.FaceDetails?.length || 0;
+	return output.FaceDetails?.length || 0;
 };
 
 const searchFacesByImage = async (CollectionId: string, file: Buffer) => {
-  const command = new SearchFacesByImageCommand({
-    CollectionId,
-    Image: {
-      Bytes: file,
-    },
-    FaceMatchThreshold: 90,
-  });
+	const command = new SearchFacesByImageCommand({
+		CollectionId,
+		Image: {
+			Bytes: file,
+		},
+		FaceMatchThreshold: 90,
+	});
 
-  return rekognition.send(command);
+	return rekognition.send(command);
 };
 
 const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024;
 
 export const handler = async (event: APIGatewayProxyEvent) => {
-  try {
-    const collectionId = event.headers["x-collection-id"]!;
+	try {
+		const collectionId = event.headers["x-collection-id"];
 
-    if (!collectionId) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: "O cabeçalho x-collection-id é obrigatório.",
-        }),
-      };
-    }
+		if (!collectionId) {
+			return {
+				statusCode: 400,
+				body: JSON.stringify({
+					message: "O cabeçalho x-collection-id é obrigatório.",
+				}),
+			};
+		}
 
-    const payloadSize = Buffer.byteLength(event.body!, "utf8");
+		if (!event.body) {
+			return {
+				statusCode: 400,
+				body: JSON.stringify({
+					message: "Corpo da requisição não encontrado.",
+				}),
+			};
+		}
 
-    if (payloadSize > MAX_PAYLOAD_SIZE) {
-      return {
-        statusCode: 413,
-        body: JSON.stringify({
-          message: "O tamanho do payload excede o limite de 5 MB.",
-        }),
-      };
-    }
+		const payloadSize = Buffer.byteLength(event.body, "utf8");
 
-    const imageBase64 = event.body;
+		if (payloadSize > MAX_PAYLOAD_SIZE) {
+			return {
+				statusCode: 413,
+				body: JSON.stringify({
+					message: "O tamanho do payload excede o limite de 5 MB.",
+				}),
+			};
+		}
 
-    if (!imageBase64 || !collectionId) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          principalId: "user",
-          message:
-            "Parâmetros inválidos: imageBase64 e collectionId são obrigatórios.",
-        }),
-      };
-    }
+		const imageBase64 = event.body;
 
-    const file = Buffer.from(
-      imageBase64.replace("data:image/jpeg;base64,", ""),
-      "base64"
-    );
+		if (!imageBase64 || !collectionId) {
+			return {
+				statusCode: 400,
+				body: JSON.stringify({
+					principalId: "user",
+					message:
+						"Parâmetros inválidos: imageBase64 e collectionId são obrigatórios.",
+				}),
+			};
+		}
 
-    const facesCount = await verifyHowManyFacesInPicture(file);
+		const file = Buffer.from(
+			imageBase64.replace("data:image/jpeg;base64,", ""),
+			"base64",
+		);
 
-    if (facesCount === 0) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: "Nenhuma face encontrada na imagem.",
-        }),
-      };
-    }
+		const facesCount = await verifyHowManyFacesInPicture(file);
 
-    if (facesCount > 1) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: "Mais de uma face encontrada na imagem.",
-        }),
-      };
-    }
+		if (facesCount === 0) {
+			return {
+				statusCode: 400,
+				body: JSON.stringify({
+					message: "Nenhuma face encontrada na imagem.",
+				}),
+			};
+		}
 
-    const searchFacesOutput = await searchFacesByImage(collectionId, file);
+		if (facesCount > 1) {
+			return {
+				statusCode: 400,
+				body: JSON.stringify({
+					message: "Mais de uma face encontrada na imagem.",
+				}),
+			};
+		}
 
-    const images =
-      searchFacesOutput.FaceMatches?.map(
-        (face) => face.Face?.ExternalImageId
-      ) || [];
+		const searchFacesOutput = await searchFacesByImage(collectionId, file);
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        images,
-      }),
-    };
-  } catch (e) {
-    const error = e as Error;
+		const images =
+			searchFacesOutput.FaceMatches?.map(
+				(face) => face.Face?.ExternalImageId,
+			) || [];
 
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        message:
-          error.message ||
-          "Erro interno. Não foi possível processar a requisição.",
-      }),
-    };
-  }
+		return {
+			statusCode: 200,
+			body: JSON.stringify({
+				images,
+			}),
+		};
+	} catch (e) {
+		const error = e as Error;
+
+		return {
+			statusCode: 500,
+			body: JSON.stringify({
+				message:
+					error.message ||
+					"Erro interno. Não foi possível processar a requisição.",
+			}),
+		};
+	}
 };
