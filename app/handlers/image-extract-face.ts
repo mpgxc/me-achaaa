@@ -60,7 +60,7 @@ const extractFacePicturePolicy = (face: Face, faceDetail: FaceDetail) => {
 		return false;
 	}
 
-	if (faceDetail.Quality.Sharpness < 50 && faceDetail.Quality.Brightness < 90) {
+	if (faceDetail.Quality.Sharpness < 60 || faceDetail.Quality.Brightness < 60) {
 		return false;
 	}
 
