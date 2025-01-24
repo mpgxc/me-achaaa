@@ -87,18 +87,34 @@ functions:
           functionResponseType: ReportBatchItemFailures # Retorna um relatório de falhas
     environment:
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
-      IMAGE_PROCESSING_THUMBNAIL: !Ref ImageProcessingThumbnailsQueue
+      IMAGE_PROCESSING_FACE_EXTRACT: !Ref ImageExtractFaceQueue
+      IMAGE_PROCESSING_THUMBNAIL: !Ref ImageGenerateThumbnailQueue
 
-  ImageThumbnailGenerator:
+  ImageExtractFace:
     handler: build/handlers/image-extract-face.handler
     memorySize: 256
-    timeout: 300 # 5 minutos
+    timeout: 240 # 4 minutos
+    description: Extracts the face from the uploaded image
+    maximumRetryAttempts: 0
+    events:
+      - sqs:
+          arn: !GetAtt ImageExtractFaceQueue.Arn
+          batchSize: 1
+          maximumBatchingWindow: 60
+          functionResponseType: ReportBatchItemFailures
+    layers:
+      - { Ref: SharpLayerLambdaLayer }
+
+  ImageThumbnailGenerator:
+    handler: build/handlers/image-thumbnail-generator.handler
+    memorySize: 256
+    timeout: 240 # 4 minutos
     description: Generates a thumbnail for the uploaded image
     maximumRetryAttempts: 0
     events:
       - sqs:
-          arn: !GetAtt ImageProcessingThumbnailsQueue.Arn
-          batchSize: 1
+          arn: !GetAtt ImageGenerateThumbnailQueue.Arn
+          batchSize: 10
           maximumBatchingWindow: 60
           functionResponseType: ReportBatchItemFailures
     layers:
@@ -124,6 +140,12 @@ functions:
     events:
       - sqs:
           arn: !GetAtt FaceRecognitionQueueDLQ.Arn
+          batchSize: 1
+      - sqs:
+          arn: !GetAtt ImageExtractFaceQueueDLQ.Arn
+          batchSize: 1
+      - sqs:
+          arn: !GetAtt ImageGenerateThumbnailQueueDLQ.Arn
           batchSize: 1
 
 resources:
@@ -158,19 +180,20 @@ resources:
                       Value: uploads/incoming/
                     - Name: suffix
                       Value: .jpeg
-    ImageProcessingThumbnailsQueue:
+
+    ImageExtractFaceQueue:
       Type: AWS::SQS::Queue
       Properties:
-        QueueName: ${self:service}-${self:provider.stage}-thumbnails-queue
+        QueueName: ${self:service}-${self:provider.stage}-image-extract-face-queue
         VisibilityTimeout: 240
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt FaceRecognitionQueueDLQ.Arn
           maxReceiveCount: 1
 
-    ImageProcessingThumbnailsQueueDLQ:
+    ImageExtractFaceQueueDLQ:
       Type: AWS::SQS::Queue
       Properties:
-        QueueName: ${self:service}-${self:provider.stage}-thumbnails-queue-dlq
+        QueueName: ${self:service}-${self:provider.stage}-image-extract-face-queue-dlq
         VisibilityTimeout: 240
 
     FaceRecognitionQueue:
@@ -186,6 +209,21 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-queue-dlq
+        VisibilityTimeout: 240
+
+    ImageGenerateThumbnailQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-generate-thumbnail-queue
+        VisibilityTimeout: 240
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt ImageGenerateThumbnailQueueDLQ.Arn
+          maxReceiveCount: 1
+
+    ImageGenerateThumbnailQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-generate-thumbnail-queue-dlq
         VisibilityTimeout: 240
 
     FaceRecognitionQueuePolicy:
