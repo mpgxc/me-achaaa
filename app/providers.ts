@@ -88,6 +88,9 @@ export class SqsSingleton extends SQSClient {
 	}
 
 	get queueUrl() {
-		return process.env.IMAGE_PROCESSING_THUMBNAIL;
+		return {
+			THUMBNAIL: process.env.IMAGE_PROCESSING_THUMBNAIL,
+			FACE_EXTRACT: process.env.IMAGE_PROCESSING_FACE_EXTRACT,
+		};
 	}
 }

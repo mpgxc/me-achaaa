@@ -155,16 +155,24 @@ export const handler = async ({
 		);
 	});
 
-	{
-		const command = new SendMessageCommand({
-			QueueUrl: sqsClient.queueUrl,
-			MessageBody: JSON.stringify({
-				images,
+	await Promise.all([
+		sqsClient.send(
+			new SendMessageCommand({
+				QueueUrl: sqsClient.queueUrl.THUMBNAIL,
+				MessageBody: JSON.stringify({
+					images: images.map(({ key }) => key),
+				}),
 			}),
-		});
-
-		await sqsClient.send(command);
-	}
+		),
+		sqsClient.send(
+			new SendMessageCommand({
+				QueueUrl: sqsClient.queueUrl.FACE_EXTRACT,
+				MessageBody: JSON.stringify({
+					images,
+				}),
+			}),
+		),
+	]);
 
 	return { batchItemFailures };
 };

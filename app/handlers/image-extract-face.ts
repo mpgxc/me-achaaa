@@ -48,7 +48,7 @@ const extractFacePicturePolicy = (face: Face, faceDetail: FaceDetail) => {
 		return false;
 	}
 
-	if (face.Confidence < 95) {
+	if (face.Confidence < 99) {
 		return false;
 	}
 
@@ -86,6 +86,9 @@ const extractFacePicture = async ({
 
 		for (const { Face, FaceDetail } of faces) {
 			if (!extractFacePicturePolicy(Face, FaceDetail)) {
+				console.info(`ExtractFacePicture: Face not extracted: ${Face.FaceId}`);
+				console.table({ Face, FaceDetail });
+
 				continue;
 			}
 
@@ -125,16 +128,16 @@ const extractFacePicture = async ({
 				),
 			};
 
-			const croppedImage = await sharp(image)
+			const cropped = await sharp(image)
 				.extract(params)
-				.toFormat("jpeg")
+				.toFormat("jpg")
 				.toBuffer();
 
 			{
 				const command = new PutObjectCommand({
 					Bucket: s3Client.bucketName,
 					Key: `uploads/faces/${CollectionId}/${Face.FaceId}.jpg`,
-					Body: croppedImage,
+					Body: cropped,
 					ContentType: "image/jpeg",
 				});
 
@@ -158,12 +161,12 @@ const extractFacePicture = async ({
 	}
 };
 
-export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
+export const handler = async ({
+	Records,
+}: SQSEvent): Promise<SQSBatchResponse> => {
 	const batchItemFailures: Array<{ itemIdentifier: string }> = [];
 
-	for (const record of event.Records) {
-		const { body, messageId } = record;
-
+	for (const { body, messageId } of Records) {
 		try {
 			const { images } = JSON.parse(body) as {
 				images: ImageProcessingEvent[];
