@@ -1,16 +1,5 @@
 import type { Face, FaceDetail } from "@aws-sdk/client-rekognition";
 
-export type DynamoFaceRecord = {
-	PK: string;
-	SK: string;
-	CollectionId: string;
-	Confidence: number;
-	CreatedAt: string;
-	ExternalImageId: string;
-	FaceId: string;
-	ImageId: string;
-};
-
 export type DynamoItem = {
 	PK: string;
 	SK: string;

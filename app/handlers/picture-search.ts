@@ -5,6 +5,14 @@ import {
 import type { APIGatewayProxyEvent } from "aws-lambda";
 import { RekognitionSingleton } from "../providers";
 
+/***
+ * Exemplo de busca de imagens por faces usando o Amazon Rekognition e Lambda.
+ * Obs: Essa funcionalidade ficará no sistema principal NestJS.
+ * Já que se trata de uma função REST que será frequentemente chamada é melhor
+ * que ela fique no sistema principal para economizar chamadas ao Lambda.
+ * Money que é good nóis num have. xD
+ */
+
 const rekognition = RekognitionSingleton.getInstance();
 
 const verifyHowManyFacesInPicture = async (file: Buffer) => {
