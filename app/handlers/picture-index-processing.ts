@@ -60,7 +60,7 @@ const rekognitionEventHandler = async ({
 					Name: object.key,
 				},
 			},
-			MaxFaces: 3,
+			MaxFaces: 5,
 			QualityFilter: "HIGH",
 			ExternalImageId,
 			DetectionAttributes: ["ALL"],
