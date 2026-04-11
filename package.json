@@ -23,7 +23,7 @@
 		"@tsconfig/node22": "^22.0.0",
 		"@types/aws-lambda": "^8.10.147",
 		"@types/node": "^22.10.5",
-		"@vitest/coverage-v8": "2.1.8",
+		"@vitest/coverage-v8": "4.1.4",
 		"copyfiles": "^2.4.1",
 		"nodemon": "^3.1.9",
 		"pretty-print": "^2.0.0",
@@ -55,7 +55,7 @@
 		"pino": "^9.6.0",
 		"pino-pretty": "^13.0.0",
 		"sharp": "^0.33.5",
-		"vitest": "^2.1.9",
+		"vitest": "^4.1.4",
 		"zod": "^3.24.1"
 	}
 }
