@@ -44,6 +44,19 @@ export const AlbumFacesResponse = z
 	})
 	.openapi("AlbumFacesResponse");
 
+export const GenerateUploadUrlRequest = z
+	.object({
+		filename: z.string().min(1),
+	})
+	.openapi("GenerateUploadUrlRequest");
+
+export const GenerateUploadUrlResponse = z
+	.object({
+		uploadUrl: z.string().url(),
+		key: z.string(),
+	})
+	.openapi("GenerateUploadUrlResponse");
+
 export const AlbumIdParam = z.object({
 	externalClientAlbumId: z.string().uuid(),
 });

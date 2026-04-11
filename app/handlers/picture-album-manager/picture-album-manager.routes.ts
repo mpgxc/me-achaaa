@@ -1,7 +1,12 @@
+import { randomUUID } from "node:crypto";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { S3Singleton } from "../../providers";
 import { PictureAlbumManagementService } from "./picture-album-management.service";
 import {
 	deleteAlbumRoute,
+	generateUploadUrlRoute,
 	getAlbumRoute,
 	listAlbumFacesRoute,
 	registerAlbumRoute,
@@ -10,6 +15,9 @@ import {
 export const pictureAlbumManagementRoute = new OpenAPIHono();
 
 const albumManagementService = new PictureAlbumManagementService();
+const s3Client = S3Singleton.getInstance();
+
+const PRESIGNED_URL_EXPIRES_IN_SECONDS = 300; // 5 minutes
 
 pictureAlbumManagementRoute.openapi(registerAlbumRoute, async (ctx) => {
 	const { externalClientAlbumId } = ctx.req.valid("json");
@@ -173,6 +181,50 @@ pictureAlbumManagementRoute.openapi(listAlbumFacesRoute, async (ctx) => {
 		return ctx.json(
 			{
 				message: "Failed to list album faces",
+				error: error instanceof Error ? error.message : String(error),
+			},
+			500,
+		);
+	}
+});
+
+pictureAlbumManagementRoute.openapi(generateUploadUrlRoute, async (ctx) => {
+	const { externalClientAlbumId } = ctx.req.param();
+
+	try {
+		const exists = await albumManagementService.checkAlbumExists(
+			externalClientAlbumId,
+		);
+
+		if (!exists) {
+			return ctx.json(
+				{
+					message: "Album not found",
+				},
+				404,
+			);
+		}
+
+		const imageId = randomUUID();
+		const key = `uploads/incoming/${externalClientAlbumId}/${imageId}.jpg`;
+
+		const command = new PutObjectCommand({
+			Bucket: s3Client.bucketName,
+			Key: key,
+			ContentType: "image/jpeg",
+		});
+
+		const uploadUrl = await getSignedUrl(s3Client, command, {
+			expiresIn: PRESIGNED_URL_EXPIRES_IN_SECONDS,
+		});
+
+		return ctx.json({ uploadUrl, key }, 200);
+	} catch (error) {
+		console.error("Error generating upload URL:", error);
+
+		return ctx.json(
+			{
+				message: "Failed to generate upload URL",
 				error: error instanceof Error ? error.message : String(error),
 			},
 			500,
