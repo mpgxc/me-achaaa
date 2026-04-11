@@ -29,10 +29,10 @@ const rekognition = RekognitionSingleton.getInstance();
 const dynamodb = DynamoSingleton.getInstance();
 const sqsClient = SqsSingleton.getInstance();
 
-const extractExternalImageId = (key: string) => {
+export const extractExternalImageId = (key: string) => {
 	const [CollectionId, ExternalImageId] = key
 		.replace("uploads/incoming/", "")
-		.replace(".jpg", "")
+		.replace(/\.jpe?g$/, "")
 		.split("/");
 
 	return {
@@ -189,10 +189,10 @@ const registerImageMetadata = async (images: ImageProcessingEvent[]) => {
 					SK: `IMAGE#${ExternalImageId}`,
 					ExternalImageId,
 					Content: {
-						thumbnail: `${CollectionId}/thumbnails/${ExternalImageId}.jpg`,
-						original: `${CollectionId}/originals/${ExternalImageId}.jpg`,
+						thumbnail: `uploads/thumbnails/${CollectionId}/${ExternalImageId}.jpg`,
+						original: `uploads/incoming/${CollectionId}/${ExternalImageId}.jpg`,
 						faces: faces.map(
-							({ Face }) => `${CollectionId}/faces/${Face.FaceId}.jpg`,
+							({ Face }) => `uploads/faces/${CollectionId}/${Face.FaceId}.jpg`,
 						),
 					},
 					CreatedAt: new Date().toISOString(),

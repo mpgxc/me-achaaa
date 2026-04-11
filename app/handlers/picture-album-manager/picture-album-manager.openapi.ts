@@ -1,5 +1,8 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import {
+	AlbumFacesResponse,
+	AlbumIdParam,
+	AlbumMetadataResponse,
 	ErrorResponse,
 	RegisterAlbumRequest,
 	SuccessResponse,
@@ -59,9 +62,7 @@ export const deleteAlbumRoute = createRoute({
 	path: "/albums/{externalClientAlbumId}",
 	method: "delete",
 	request: {
-		params: z.object({
-			externalClientAlbumId: z.string().uuid(),
-		}),
+		params: AlbumIdParam,
 	},
 	responses: {
 		200: {
@@ -77,6 +78,76 @@ export const deleteAlbumRoute = createRoute({
 			content: {
 				"application/json": {
 					schema: ErrorResponse,
+				},
+			},
+		},
+		404: {
+			description: "Album not found",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+		500: {
+			description: "Internal Server Error",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+	},
+});
+
+export const getAlbumRoute = createRoute({
+	tags: ["Albums"],
+	path: "/albums/{externalClientAlbumId}",
+	method: "get",
+	request: {
+		params: AlbumIdParam,
+	},
+	responses: {
+		200: {
+			description: "Album metadata",
+			content: {
+				"application/json": {
+					schema: AlbumMetadataResponse,
+				},
+			},
+		},
+		404: {
+			description: "Album not found",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+		500: {
+			description: "Internal Server Error",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+	},
+});
+
+export const listAlbumFacesRoute = createRoute({
+	tags: ["Albums"],
+	path: "/albums/{externalClientAlbumId}/faces",
+	method: "get",
+	request: {
+		params: AlbumIdParam,
+	},
+	responses: {
+		200: {
+			description: "List of indexed faces in the album",
+			content: {
+				"application/json": {
+					schema: AlbumFacesResponse,
 				},
 			},
 		},

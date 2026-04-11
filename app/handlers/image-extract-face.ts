@@ -31,10 +31,10 @@ const getImageFromBucket = async (Key: string): Promise<Uint8Array | null> => {
 	return Body?.transformToByteArray() ?? null;
 };
 
-const extractExternalImageId = (key: string) => {
+export const extractExternalImageId = (key: string) => {
 	const [CollectionId, ExternalImageId] = key
 		.replace("uploads/incoming/", "")
-		.replace(".jpg", "")
+		.replace(/\.jpe?g$/, "")
 		.split("/");
 
 	return {
@@ -43,7 +43,10 @@ const extractExternalImageId = (key: string) => {
 	};
 };
 
-const extractFacePicturePolicy = (face: Face, faceDetail: FaceDetail) => {
+export const extractFacePicturePolicy = (
+	face: Face,
+	faceDetail: FaceDetail,
+) => {
 	if (!face.BoundingBox || !face.Confidence) {
 		return false;
 	}

@@ -2,12 +2,18 @@ import {
 	DeleteItemCommand,
 	GetItemCommand,
 	PutItemCommand,
+	QueryCommand,
 } from "@aws-sdk/client-dynamodb";
 import {
 	CreateCollectionCommand,
 	DeleteCollectionCommand,
+	ListFacesCommand,
 } from "@aws-sdk/client-rekognition";
-import { DeleteObjectsCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+	DeleteObjectCommand,
+	DeleteObjectsCommand,
+	PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import {
 	DynamoSingleton,
@@ -15,15 +21,16 @@ import {
 	S3Singleton,
 } from "../../providers";
 
-type DynamoItem = {
+type DynamoAlbumMetadataItem = {
 	PK: string;
 	SK: string;
-	Content: Content;
+	Content: AlbumMetadataContent;
 	Status: string;
 	CreatedAt: string;
 };
 
-type Content = {
+type AlbumMetadataContent = {
+	externalClientAlbumId: string;
 	photos: Photo[];
 	faces: Photo[];
 };
@@ -31,6 +38,15 @@ type Content = {
 type Photo = {
 	s3Key: string;
 	faced: string;
+};
+
+export type AlbumFaceRecord = {
+	FaceId: string;
+	ImageId: string;
+	ExternalImageId: string;
+	Confidence: number;
+	CollectionId: string;
+	CreatedAt: string;
 };
 
 export class PictureAlbumManagementService {
@@ -52,6 +68,58 @@ export class PictureAlbumManagementService {
 		const { Item } = await this.dynamo.send(command);
 
 		return !!Item;
+	}
+
+	async getAlbumMetadata(
+		externalClientAlbumId: string,
+	): Promise<AlbumMetadataContent | null> {
+		const command = new GetItemCommand({
+			TableName: this.dynamo.tableName,
+			Key: marshall({
+				PK: `ALBUM#${externalClientAlbumId}`,
+				SK: "METADATA",
+			}),
+		});
+
+		const { Item } = await this.dynamo.send(command);
+
+		if (!Item) {
+			return null;
+		}
+
+		const { Content } = unmarshall(Item) as DynamoAlbumMetadataItem;
+
+		return Content;
+	}
+
+	async listAlbumFaces(
+		externalClientAlbumId: string,
+	): Promise<AlbumFaceRecord[]> {
+		const [dynamoResult, rekognitionResult] = await Promise.all([
+			this.dynamo.send(
+				new QueryCommand({
+					TableName: this.dynamo.tableName,
+					KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",
+					ExpressionAttributeValues: marshall({
+						":pk": `ALBUM#${externalClientAlbumId}`,
+						":skPrefix": "FACE#",
+					}),
+				}),
+			),
+			this.rekognition.send(
+				new ListFacesCommand({
+					CollectionId: externalClientAlbumId,
+				}),
+			),
+		]);
+
+		const rekognitionFaceIds = new Set(
+			(rekognitionResult.Faces ?? []).map((f) => f.FaceId),
+		);
+
+		return (dynamoResult.Items ?? [])
+			.map((item) => unmarshall(item) as AlbumFaceRecord)
+			.filter((f) => rekognitionFaceIds.has(f.FaceId));
 	}
 
 	async createRekognitionCollection(
@@ -124,7 +192,7 @@ export class PictureAlbumManagementService {
 				throw new Error("Album not found");
 			}
 
-			const { Content } = unmarshall(Item) as DynamoItem;
+			const { Content } = unmarshall(Item) as DynamoAlbumMetadataItem;
 
 			{
 				const command = new DeleteObjectsCommand({
@@ -153,6 +221,19 @@ export class PictureAlbumManagementService {
 	async createBucketAlbum(externalClientAlbumId: string) {
 		await this.s3.send(
 			new PutObjectCommand({
+				Bucket: this.s3.bucketName,
+				Key: `uploads/${externalClientAlbumId}/`,
+			}),
+		);
+	}
+
+	/**
+	 * @description Delete the S3 placeholder folder created by createBucketAlbum
+	 * @param externalClientAlbumId  The external client album id
+	 */
+	async deleteBucketAlbumPlaceholder(externalClientAlbumId: string) {
+		await this.s3.send(
+			new DeleteObjectCommand({
 				Bucket: this.s3.bucketName,
 				Key: `uploads/${externalClientAlbumId}/`,
 			}),

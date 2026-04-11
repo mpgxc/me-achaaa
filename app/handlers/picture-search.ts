@@ -1,6 +1,7 @@
 import {
 	DetectFacesCommand,
 	SearchFacesByImageCommand,
+	SearchFacesCommand,
 } from "@aws-sdk/client-rekognition";
 import type { APIGatewayProxyEvent } from "aws-lambda";
 import { RekognitionSingleton } from "../providers";
@@ -123,6 +124,88 @@ export const handler = async (event: APIGatewayProxyEvent) => {
 			statusCode: 200,
 			body: JSON.stringify({
 				images,
+			}),
+		};
+	} catch (e) {
+		const error = e as Error;
+
+		return {
+			statusCode: 500,
+			body: JSON.stringify({
+				message:
+					error.message ||
+					"Erro interno. Não foi possível processar a requisição.",
+			}),
+		};
+	}
+};
+
+export const handlerByFaceId = async (event: APIGatewayProxyEvent) => {
+	try {
+		const collectionId = event.headers["x-collection-id"];
+
+		if (!collectionId) {
+			return {
+				statusCode: 400,
+				body: JSON.stringify({
+					message: "O cabeçalho x-collection-id é obrigatório.",
+				}),
+			};
+		}
+
+		if (!event.body) {
+			return {
+				statusCode: 400,
+				body: JSON.stringify({
+					message: "Corpo da requisição não encontrado.",
+				}),
+			};
+		}
+
+		let faceId: string | undefined;
+
+		try {
+			({ faceId } = JSON.parse(event.body) as { faceId?: string });
+		} catch (e) {
+			if (e instanceof SyntaxError) {
+				return {
+					statusCode: 400,
+					body: JSON.stringify({
+						message: "Corpo da requisição contém JSON inválido.",
+					}),
+				};
+			}
+
+			throw e;
+		}
+		if (!faceId) {
+			return {
+				statusCode: 400,
+				body: JSON.stringify({
+					message: "O campo faceId é obrigatório.",
+				}),
+			};
+		}
+
+		const command = new SearchFacesCommand({
+			CollectionId: collectionId,
+			FaceId: faceId,
+			FaceMatchThreshold: 90,
+		});
+
+		const output = await rekognition.send(command);
+
+		const matches =
+			output.FaceMatches?.map((match) => ({
+				faceId: match.Face?.FaceId,
+				externalImageId: match.Face?.ExternalImageId,
+				similarity: match.Similarity,
+			})) || [];
+
+		return {
+			statusCode: 200,
+			body: JSON.stringify({
+				matches,
 			}),
 		};
 	} catch (e) {
