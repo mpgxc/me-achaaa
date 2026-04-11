@@ -162,8 +162,22 @@ export const handlerByFaceId = async (event: APIGatewayProxyEvent) => {
 			};
 		}
 
-		const { faceId } = JSON.parse(event.body) as { faceId?: string };
+		let faceId: string | undefined;
 
+		try {
+			({ faceId } = JSON.parse(event.body) as { faceId?: string });
+		} catch (e) {
+			if (e instanceof SyntaxError) {
+				return {
+					statusCode: 400,
+					body: JSON.stringify({
+						message: "Corpo da requisição contém JSON inválido.",
+					}),
+				};
+			}
+
+			throw e;
+		}
 		if (!faceId) {
 			return {
 				statusCode: 400,
