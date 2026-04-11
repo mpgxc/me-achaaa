@@ -1,4 +1,4 @@
-import type { APIGatewayProxyEvent } from "aws-lambda";
+import type { APIGatewayProxyEventV2 } from "aws-lambda";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRekognitionSend = vi.fn();
@@ -12,14 +12,16 @@ vi.mock("../providers", () => ({
 // Import after mock is set up
 const { handler, handlerByFaceId } = await import("./picture-search");
 
+const VALID_UUID = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
+
 const makeEvent = (
-	overrides: Partial<APIGatewayProxyEvent> = {},
-): APIGatewayProxyEvent =>
+	overrides: Partial<APIGatewayProxyEventV2> = {},
+): APIGatewayProxyEventV2 =>
 	({
-		headers: { "x-collection-id": "col-1" },
+		headers: { "x-collection-id": VALID_UUID },
 		body: null,
 		...overrides,
-	}) as unknown as APIGatewayProxyEvent;
+	}) as unknown as APIGatewayProxyEventV2;
 
 describe("handler (search by image)", () => {
 	beforeEach(() => vi.clearAllMocks());
@@ -29,7 +31,17 @@ describe("handler (search by image)", () => {
 		const result = await handler(event);
 
 		expect(result.statusCode).toBe(400);
-		expect(JSON.parse(result.body).message).toContain("x-collection-id");
+		expect(JSON.parse(result.body as string).message).toContain(
+			"x-collection-id",
+		);
+	});
+
+	it("returns 400 when x-collection-id is not a valid UUID", async () => {
+		const event = makeEvent({ headers: { "x-collection-id": "not-a-uuid" } });
+		const result = await handler(event);
+
+		expect(result.statusCode).toBe(400);
+		expect(JSON.parse(result.body as string).message).toContain("UUID");
 	});
 
 	it("returns 400 when body is missing", async () => {
@@ -56,7 +68,7 @@ describe("handler (search by image)", () => {
 		const result = await handler(event);
 
 		expect(result.statusCode).toBe(400);
-		expect(JSON.parse(result.body).message).toContain("face");
+		expect(JSON.parse(result.body as string).message).toContain("face");
 	});
 
 	it("returns 400 when more than one face is detected", async () => {
@@ -88,7 +100,10 @@ describe("handler (search by image)", () => {
 		const result = await handler(event);
 
 		expect(result.statusCode).toBe(200);
-		expect(JSON.parse(result.body).images).toEqual(["img-1", "img-2"]);
+		expect(JSON.parse(result.body as string).images).toEqual([
+			"img-1",
+			"img-2",
+		]);
 	});
 });
 
@@ -103,7 +118,20 @@ describe("handlerByFaceId (search by face ID)", () => {
 		const result = await handlerByFaceId(event);
 
 		expect(result.statusCode).toBe(400);
-		expect(JSON.parse(result.body).message).toContain("x-collection-id");
+		expect(JSON.parse(result.body as string).message).toContain(
+			"x-collection-id",
+		);
+	});
+
+	it("returns 400 when x-collection-id is not a valid UUID", async () => {
+		const event = makeEvent({
+			headers: { "x-collection-id": "invalid" },
+			body: JSON.stringify({ faceId: "f1" }),
+		});
+		const result = await handlerByFaceId(event);
+
+		expect(result.statusCode).toBe(400);
+		expect(JSON.parse(result.body as string).message).toContain("UUID");
 	});
 
 	it("returns 400 when body is missing", async () => {
@@ -118,7 +146,7 @@ describe("handlerByFaceId (search by face ID)", () => {
 		const result = await handlerByFaceId(event);
 
 		expect(result.statusCode).toBe(400);
-		expect(JSON.parse(result.body).message).toContain("faceId");
+		expect(JSON.parse(result.body as string).message).toContain("faceId");
 	});
 
 	it("returns 200 with matches when faceId is valid", async () => {
@@ -132,7 +160,7 @@ describe("handlerByFaceId (search by face ID)", () => {
 		const result = await handlerByFaceId(event);
 
 		expect(result.statusCode).toBe(200);
-		const body = JSON.parse(result.body);
+		const body = JSON.parse(result.body as string);
 
 		expect(body.matches).toHaveLength(1);
 		expect(body.matches[0].faceId).toBe("f2");
@@ -146,6 +174,6 @@ describe("handlerByFaceId (search by face ID)", () => {
 		const result = await handlerByFaceId(event);
 
 		expect(result.statusCode).toBe(200);
-		expect(JSON.parse(result.body).matches).toEqual([]);
+		expect(JSON.parse(result.body as string).matches).toEqual([]);
 	});
 });

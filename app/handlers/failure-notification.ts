@@ -15,13 +15,6 @@ type DiscordMessage = {
 	}>;
 };
 
-type ProcessingResult = {
-	messageId: string;
-	status: "Success" | "Failed";
-	discordResponse?: number;
-	error?: string;
-};
-
 export const handler = async (event: SQSEvent) => {
 	const webhook = process.env.DISCORD_WEBHOOK_URL;
 
@@ -30,59 +23,42 @@ export const handler = async (event: SQSEvent) => {
 		return;
 	}
 
-	const results: ProcessingResult[] = [];
-
 	for (const record of event.Records) {
-		try {
-			const messageBody = record.body;
+		const messageBody = record.body;
 
-			const discordMessage: DiscordMessage = {
-				content: "📢 **Mensagem da DLQ:**",
-				embeds: [
-					{
-						title: "Erro no Processamento",
-						description: "Mensagem movida para DLQ:",
-						color: 15158332,
-						fields: [
-							{
-								name: "Conteúdo da Mensagem",
-								value: `\`\`\`json\n${messageBody}\n\`\`\``,
-							},
-							{
-								name: "Recebida em",
-								value: new Date().toISOString(),
-							},
-						],
-					},
-				],
-			};
-
-			const response = await fetch(webhook, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
+		const discordMessage: DiscordMessage = {
+			content: "📢 **Mensagem da DLQ:**",
+			embeds: [
+				{
+					title: "Erro no Processamento",
+					description: "Mensagem movida para DLQ:",
+					color: 15158332,
+					fields: [
+						{
+							name: "Conteúdo da Mensagem",
+							value: `\`\`\`json\n${messageBody}\n\`\`\``,
+						},
+						{
+							name: "Recebida em",
+							value: new Date().toISOString(),
+						},
+					],
 				},
-				body: JSON.stringify(discordMessage),
-			});
+			],
+		};
 
-			results.push({
-				messageId: record.messageId,
-				status: "Success",
-				discordResponse: response.status,
-			});
-		} catch (e) {
-			const error = e instanceof Error ? e : new Error(JSON.stringify(e));
+		const response = await fetch(webhook, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify(discordMessage),
+		});
 
-			console.error(
-				`Erro ao processar mensagem ID ${record.messageId}:`,
-				error,
+		if (!response.ok) {
+			throw new Error(
+				`Discord webhook returned HTTP ${response.status} for message ${record.messageId}`,
 			);
-
-			results.push({
-				messageId: record.messageId,
-				status: "Failed",
-				error: error.message,
-			});
 		}
 	}
 };

@@ -3,7 +3,10 @@ import {
 	SearchFacesByImageCommand,
 	SearchFacesCommand,
 } from "@aws-sdk/client-rekognition";
-import type { APIGatewayProxyEvent } from "aws-lambda";
+import type {
+	APIGatewayProxyEventV2,
+	APIGatewayProxyResultV2,
+} from "aws-lambda";
 import { RekognitionSingleton } from "../providers";
 
 /***
@@ -13,6 +16,9 @@ import { RekognitionSingleton } from "../providers";
  * que ela fique no sistema principal para economizar chamadas ao Lambda.
  * Money que é good nóis num have. xD
  */
+
+const UUID_REGEX =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const rekognition = RekognitionSingleton.getInstance();
 
@@ -42,15 +48,26 @@ const searchFacesByImage = async (CollectionId: string, file: Buffer) => {
 
 const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024;
 
-export const handler = async (event: APIGatewayProxyEvent) => {
+export const handler = async (
+	event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResultV2> => {
 	try {
-		const collectionId = event.headers["x-collection-id"];
+		const collectionId = event.headers?.["x-collection-id"];
 
 		if (!collectionId) {
 			return {
 				statusCode: 400,
 				body: JSON.stringify({
 					message: "O cabeçalho x-collection-id é obrigatório.",
+				}),
+			};
+		}
+
+		if (!UUID_REGEX.test(collectionId)) {
+			return {
+				statusCode: 400,
+				body: JSON.stringify({
+					message: "O cabeçalho x-collection-id deve ser um UUID válido.",
 				}),
 			};
 		}
@@ -76,17 +93,6 @@ export const handler = async (event: APIGatewayProxyEvent) => {
 		}
 
 		const imageBase64 = event.body;
-
-		if (!imageBase64 || !collectionId) {
-			return {
-				statusCode: 400,
-				body: JSON.stringify({
-					principalId: "user",
-					message:
-						"Parâmetros inválidos: imageBase64 e collectionId são obrigatórios.",
-				}),
-			};
-		}
 
 		const file = Buffer.from(
 			imageBase64.replace("data:image/jpeg;base64,", ""),
@@ -140,7 +146,9 @@ export const handler = async (event: APIGatewayProxyEvent) => {
 	}
 };
 
-export const handlerByFaceId = async (event: APIGatewayProxyEvent) => {
+export const handlerByFaceId = async (
+	event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResultV2> => {
 	try {
 		const collectionId = event.headers["x-collection-id"];
 
@@ -149,6 +157,15 @@ export const handlerByFaceId = async (event: APIGatewayProxyEvent) => {
 				statusCode: 400,
 				body: JSON.stringify({
 					message: "O cabeçalho x-collection-id é obrigatório.",
+				}),
+			};
+		}
+
+		if (!UUID_REGEX.test(collectionId)) {
+			return {
+				statusCode: 400,
+				body: JSON.stringify({
+					message: "O cabeçalho x-collection-id deve ser um UUID válido.",
 				}),
 			};
 		}
