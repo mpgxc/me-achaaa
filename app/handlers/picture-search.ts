@@ -52,7 +52,7 @@ export const handler = async (
 	event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResultV2> => {
 	try {
-		const collectionId = event.headers["x-collection-id"];
+		const collectionId = event.headers?.["x-collection-id"];
 
 		if (!collectionId) {
 			return {
