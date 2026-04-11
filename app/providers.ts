@@ -3,14 +3,8 @@ import { RekognitionClient } from "@aws-sdk/client-rekognition";
 import { S3Client } from "@aws-sdk/client-s3";
 import { SQSClient } from "@aws-sdk/client-sqs";
 
-const credentials = {
-	region: "us-east-1",
-	/*
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-    },
-  */
+const awsClientConfig = {
+	region: process.env.AWS_REGION_DEFAULT ?? "us-east-1",
 };
 
 export class RekognitionSingleton {
@@ -22,7 +16,7 @@ export class RekognitionSingleton {
 
 	public static getInstance(): RekognitionClient {
 		if (!RekognitionSingleton.instance) {
-			RekognitionSingleton.instance = new RekognitionClient(credentials);
+			RekognitionSingleton.instance = new RekognitionClient(awsClientConfig);
 		}
 
 		return RekognitionSingleton.instance;
@@ -33,7 +27,7 @@ export class DynamoSingleton extends DynamoDBClient {
 	private static instance: DynamoSingleton;
 
 	private constructor() {
-		super(credentials);
+		super(awsClientConfig);
 	}
 
 	public static getInstance(): DynamoSingleton {
@@ -44,11 +38,14 @@ export class DynamoSingleton extends DynamoDBClient {
 		return DynamoSingleton.instance;
 	}
 
-	/**
-	 * Depois pegar via env
-	 */
-	get tableName() {
-		return "infra-face-rekognition-sls-dev-rekognition-bucket-assets-controll";
+	get tableName(): string {
+		const name = process.env.DYNAMO_TABLE_NAME;
+
+		if (!name) {
+			throw new Error("DYNAMO_TABLE_NAME environment variable is not set");
+		}
+
+		return name;
 	}
 }
 
@@ -56,7 +53,7 @@ export class S3Singleton extends S3Client {
 	private static instance: S3Singleton;
 
 	private constructor() {
-		super(credentials);
+		super(awsClientConfig);
 	}
 
 	public static getInstance(): S3Singleton {
@@ -67,8 +64,14 @@ export class S3Singleton extends S3Client {
 		return S3Singleton.instance;
 	}
 
-	get bucketName() {
-		return "infra-face-rekognition-sls-dev-bucket";
+	get bucketName(): string {
+		const name = process.env.S3_BUCKET_NAME;
+
+		if (!name) {
+			throw new Error("S3_BUCKET_NAME environment variable is not set");
+		}
+
+		return name;
 	}
 }
 
@@ -76,7 +79,7 @@ export class SqsSingleton extends SQSClient {
 	private static instance: SqsSingleton;
 
 	private constructor() {
-		super(credentials);
+		super(awsClientConfig);
 	}
 
 	public static getInstance(): SqsSingleton {

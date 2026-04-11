@@ -18,3 +18,32 @@ export const SuccessResponse = z
 		message: z.string(),
 	})
 	.openapi("SuccessResponse");
+
+export const AlbumMetadataResponse = z
+	.object({
+		externalClientAlbumId: z.string(),
+		photos: z.array(z.any()),
+		faces: z.array(z.any()),
+	})
+	.openapi("AlbumMetadataResponse");
+
+export const AlbumFaceRecord = z
+	.object({
+		FaceId: z.string(),
+		ImageId: z.string().optional(),
+		ExternalImageId: z.string().optional(),
+		Confidence: z.number().optional(),
+		CollectionId: z.string(),
+		CreatedAt: z.string(),
+	})
+	.openapi("AlbumFaceRecord");
+
+export const AlbumFacesResponse = z
+	.object({
+		faces: z.array(AlbumFaceRecord),
+	})
+	.openapi("AlbumFacesResponse");
+
+export const AlbumIdParam = z.object({
+	externalClientAlbumId: z.string().uuid(),
+});

@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { handle } from "hono/aws-lambda";
 import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import { prettyJSON } from "hono/pretty-json";
@@ -85,20 +86,22 @@ app.notFound(async (ctx) => {
 	);
 });
 
-const port = 3000;
+// Start the local dev server only when not running inside Lambda
+if (!process.env.LAMBDA_TASK_ROOT) {
+	const port = 3000;
 
-// Start the server
-serve(
-	{
-		port,
-		fetch: app.fetch,
-	},
-	(address) => {
-		console.log(
-			`🔥 Server listening on http://${address.address}:${address.port}/api/docs`,
-		);
-	},
-);
+	serve(
+		{
+			port,
+			fetch: app.fetch,
+		},
+		(address) => {
+			console.log(
+				`🔥 Server listening on http://${address.address}:${address.port}/api/docs`,
+			);
+		},
+	);
+}
 
 // Export the handler for AWS Lambda
-// export const handler = handle(app);
+export const handler = handle(app);

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { DetectFacesCommand } from "@aws-sdk/client-rekognition";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import sharp from "sharp";
-import { RekognitionSingleton, S3Singleton } from "./providers";
+import { RekognitionSingleton, S3Singleton } from "../app/providers";
 
 const reko = RekognitionSingleton.getInstance();
 const s3c = S3Singleton.getInstance();
@@ -164,7 +164,7 @@ async function extractFaceFromPicture(Key: string) {
 			typeof BoundingBox
 		>;
 
-		const paddingPercentage = 0.0001; // 3% do tamanho da imagem
+		const paddingPercentage = 0.0001; // 0.01% do tamanho da imagem
 		const paddingWidth = Math.round(metadata.width * paddingPercentage);
 		const paddingHeight = Math.round(metadata.height * paddingPercentage);
 
