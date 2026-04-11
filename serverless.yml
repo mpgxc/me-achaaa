@@ -26,26 +26,44 @@ provider:
         - "rekognition:DetectFaces"
         - "rekognition:IndexFaces"
         - "rekognition:ListFaces"
+        - "rekognition:SearchFaces"
         - "rekognition:SearchFacesByImage"
-        # Isso para o CRUD dinâmico de coleções
+      Resource:
+        - !Sub "arn:aws:rekognition:${AWS::Region}:${AWS::AccountId}:collection/${self:custom.REKOGNITION_COLLECTION}"
+    - Effect: "Allow"
+      Action:
         - "rekognition:CreateCollection"
         - "rekognition:DeleteCollection"
         - "rekognition:ListCollections"
-        # S3
+      Resource:
+        - !Sub "arn:aws:rekognition:${AWS::Region}:${AWS::AccountId}:collection/*"
+    - Effect: "Allow"
+      Action:
         - "s3:GetObject"
         - "s3:PutObject"
         - "s3:DeleteObject"
-        # DynamoDB
+      Resource:
+        - !Sub "${FaceRecognitionBucket.Arn}/*"
+    - Effect: "Allow"
+      Action:
         - "dynamodb:PutItem"
         - "dynamodb:GetItem"
         - "dynamodb:Query"
         - "dynamodb:UpdateItem"
         - "dynamodb:BatchWriteItem"
-        # SQS
+        - "dynamodb:DeleteItem"
+        - "dynamodb:TransactWriteItems"
+      Resource:
+        - !GetAtt RekognitionBucketAssetsControll.Arn
+        - !Sub "${RekognitionBucketAssetsControll.Arn}/index/*"
+    - Effect: "Allow"
+      Action:
         - "sqs:SendMessage"
         - "sqs:SendMessageBatch"
       Resource:
-        - "*"
+        - !GetAtt FaceRecognitionQueue.Arn
+        - !GetAtt ImageExtractFaceQueue.Arn
+        - !GetAtt ImageGenerateThumbnailQueue.Arn
 
 custom:
   defaultStage: dev
@@ -89,6 +107,8 @@ functions:
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
       IMAGE_PROCESSING_FACE_EXTRACT: !Ref ImageExtractFaceQueue
       IMAGE_PROCESSING_THUMBNAIL: !Ref ImageGenerateThumbnailQueue
+      DYNAMO_TABLE_NAME: !Ref RekognitionBucketAssetsControll
+      S3_BUCKET_NAME: !Ref FaceRecognitionBucket
 
   ImageExtractFace:
     handler: build/handlers/image-extract-face.handler
@@ -104,6 +124,9 @@ functions:
           functionResponseType: ReportBatchItemFailures
     layers:
       - { Ref: SharpLayerLambdaLayer }
+    environment:
+      DYNAMO_TABLE_NAME: !Ref RekognitionBucketAssetsControll
+      S3_BUCKET_NAME: !Ref FaceRecognitionBucket
 
   ImageThumbnailGenerator:
     handler: build/handlers/image-thumbnail-generator.handler
@@ -119,6 +142,8 @@ functions:
           functionResponseType: ReportBatchItemFailures
     layers:
       - { Ref: SharpLayerLambdaLayer }
+    environment:
+      S3_BUCKET_NAME: !Ref FaceRecognitionBucket
 
   FindSimilarFaces:
     handler: build/handlers/picture-search.handler
@@ -129,6 +154,41 @@ functions:
     events:
       - httpApi: POST /search
     environment:
+      REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
+
+  FindSimilarFacesByFaceId:
+    handler: build/handlers/picture-search.handlerByFaceId
+    memorySize: 128
+    timeout: 10
+    description: Finds similar faces by FaceId in the Rekognition collection
+    maximumRetryAttempts: 0
+    events:
+      - httpApi: POST /search/by-face-id
+    environment:
+      REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
+
+  PictureAlbumManager:
+    handler: build/handlers/picture-album-manager/picture-album-manager.handler.handler
+    memorySize: 256
+    timeout: 30
+    description: Manages photo albums and Rekognition collections
+    maximumRetryAttempts: 0
+    events:
+      - httpApi:
+          path: /albums
+          method: POST
+      - httpApi:
+          path: /albums/{externalClientAlbumId}
+          method: DELETE
+      - httpApi:
+          path: /albums/{externalClientAlbumId}
+          method: GET
+      - httpApi:
+          path: /albums/{externalClientAlbumId}/faces
+          method: GET
+    environment:
+      DYNAMO_TABLE_NAME: !Ref RekognitionBucketAssetsControll
+      S3_BUCKET_NAME: !Ref FaceRecognitionBucket
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
 
   FailureNotification:
@@ -147,6 +207,8 @@ functions:
       - sqs:
           arn: !GetAtt ImageGenerateThumbnailQueueDLQ.Arn
           batchSize: 1
+    environment:
+      DISCORD_WEBHOOK_URL: ${env:DISCORD_WEBHOOK_URL, ''}
 
 resources:
   Resources:

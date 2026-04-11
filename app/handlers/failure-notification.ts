@@ -23,11 +23,12 @@ type ProcessingResult = {
 };
 
 export const handler = async (event: SQSEvent) => {
-	/**
-	 * @todo buscar o env via variável de ambiente process.env.DISCORD_WEBHOOK_URL
-	 */
-	const webhook =
-		"https://discord.com/api/webhooks/1330356851963072543/vmQqEGxAhmTtQ2lU2H5SwjKZdTq7NdmiO31ZViJ4bqiHu7BpchQRLu7Qagzhxn9o--kj";
+	const webhook = process.env.DISCORD_WEBHOOK_URL;
+
+	if (!webhook) {
+		console.error("DISCORD_WEBHOOK_URL environment variable is not set");
+		return;
+	}
 
 	const results: ProcessingResult[] = [];
 
