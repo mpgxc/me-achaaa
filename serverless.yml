@@ -58,6 +58,11 @@ provider:
         - !Sub "${RekognitionBucketAssetsControll.Arn}/index/*"
     - Effect: "Allow"
       Action:
+        - "s3:PutObject"
+      Resource:
+        - !Sub "${FaceRecognitionBucket.Arn}/uploads/incoming/*"
+    - Effect: "Allow"
+      Action:
         - "sqs:SendMessage"
         - "sqs:SendMessageBatch"
       Resource:
@@ -186,6 +191,9 @@ functions:
       - httpApi:
           path: /albums/{externalClientAlbumId}/faces
           method: GET
+      - httpApi:
+          path: /albums/{externalClientAlbumId}/upload-url
+          method: POST
     environment:
       DYNAMO_TABLE_NAME: !Ref RekognitionBucketAssetsControll
       S3_BUCKET_NAME: !Ref FaceRecognitionBucket
@@ -248,8 +256,9 @@ resources:
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-image-extract-face-queue
         VisibilityTimeout: 240
+        ReceiveMessageWaitTimeSeconds: 20
         RedrivePolicy:
-          deadLetterTargetArn: !GetAtt FaceRecognitionQueueDLQ.Arn
+          deadLetterTargetArn: !GetAtt ImageExtractFaceQueueDLQ.Arn
           maxReceiveCount: 1
 
     ImageExtractFaceQueueDLQ:
@@ -263,6 +272,7 @@ resources:
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-queue
         VisibilityTimeout: 240
+        ReceiveMessageWaitTimeSeconds: 20
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt FaceRecognitionQueueDLQ.Arn
           maxReceiveCount: 1
@@ -278,6 +288,7 @@ resources:
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-generate-thumbnail-queue
         VisibilityTimeout: 240
+        ReceiveMessageWaitTimeSeconds: 20
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt ImageGenerateThumbnailQueueDLQ.Arn
           maxReceiveCount: 1

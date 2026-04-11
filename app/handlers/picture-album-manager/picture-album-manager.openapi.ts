@@ -4,6 +4,8 @@ import {
 	AlbumIdParam,
 	AlbumMetadataResponse,
 	ErrorResponse,
+	GenerateUploadUrlRequest,
+	GenerateUploadUrlResponse,
 	RegisterAlbumRequest,
 	SuccessResponse,
 } from "./commons";
@@ -153,6 +155,56 @@ export const listAlbumFacesRoute = createRoute({
 		},
 		404: {
 			description: "Album not found",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+		500: {
+			description: "Internal Server Error",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+	},
+});
+
+export const generateUploadUrlRoute = createRoute({
+	tags: ["Albums"],
+	path: "/albums/{externalClientAlbumId}/upload-url",
+	method: "post",
+	request: {
+		params: AlbumIdParam,
+		body: {
+			content: {
+				"application/json": {
+					schema: GenerateUploadUrlRequest,
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			description: "Pre-signed S3 upload URL",
+			content: {
+				"application/json": {
+					schema: GenerateUploadUrlResponse,
+				},
+			},
+		},
+		404: {
+			description: "Album not found",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+		400: {
+			description: "Bad Request",
 			content: {
 				"application/json": {
 					schema: ErrorResponse,

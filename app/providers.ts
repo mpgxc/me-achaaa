@@ -5,9 +5,7 @@ import { SQSClient } from "@aws-sdk/client-sqs";
 
 const awsClientConfig = {
 	region:
-		process.env.AWS_REGION ??
-		process.env.AWS_DEFAULT_REGION ??
-		"us-east-1",
+		process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "us-east-1",
 };
 
 export class RekognitionSingleton {

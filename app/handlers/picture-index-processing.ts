@@ -15,7 +15,7 @@ import type {
 	SQSBatchResponse,
 	SQSEvent,
 } from "aws-lambda";
-import { splitBatches } from "../helpers/commons";
+import { extractExternalImageId, splitBatches } from "../helpers/commons";
 import {
 	DynamoSingleton,
 	RekognitionSingleton,
@@ -29,17 +29,7 @@ const rekognition = RekognitionSingleton.getInstance();
 const dynamodb = DynamoSingleton.getInstance();
 const sqsClient = SqsSingleton.getInstance();
 
-export const extractExternalImageId = (key: string) => {
-	const [CollectionId, ExternalImageId] = key
-		.replace("uploads/incoming/", "")
-		.replace(/\.jpe?g$/, "")
-		.split("/");
-
-	return {
-		CollectionId,
-		ExternalImageId,
-	};
-};
+export { extractExternalImageId } from "../helpers/commons";
 
 const rekognitionEventHandler = async ({
 	bucket,
@@ -155,24 +145,26 @@ export const handler = async ({
 		);
 	});
 
-	await Promise.all([
-		sqsClient.send(
-			new SendMessageCommand({
-				QueueUrl: sqsClient.queueUrl.THUMBNAIL,
-				MessageBody: JSON.stringify({
-					images: images.map(({ key }) => key),
+	if (images.length > 0) {
+		await Promise.all([
+			sqsClient.send(
+				new SendMessageCommand({
+					QueueUrl: sqsClient.queueUrl.THUMBNAIL,
+					MessageBody: JSON.stringify({
+						images: images.map(({ key }) => key),
+					}),
 				}),
-			}),
-		),
-		sqsClient.send(
-			new SendMessageCommand({
-				QueueUrl: sqsClient.queueUrl.FACE_EXTRACT,
-				MessageBody: JSON.stringify({
-					images,
+			),
+			sqsClient.send(
+				new SendMessageCommand({
+					QueueUrl: sqsClient.queueUrl.FACE_EXTRACT,
+					MessageBody: JSON.stringify({
+						images,
+					}),
 				}),
-			}),
-		),
-	]);
+			),
+		]);
+	}
 
 	return { batchItemFailures };
 };

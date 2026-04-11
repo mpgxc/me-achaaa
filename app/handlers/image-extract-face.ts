@@ -11,7 +11,7 @@ import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { marshall } from "@aws-sdk/util-dynamodb";
 import type { SQSBatchResponse, SQSEvent } from "aws-lambda";
 import sharp from "sharp";
-import { splitBatches } from "../helpers/commons";
+import { extractExternalImageId, splitBatches } from "../helpers/commons";
 import { DynamoSingleton, S3Singleton } from "../providers";
 import type { ImageProcessingEvent } from "./types";
 
@@ -31,17 +31,7 @@ const getImageFromBucket = async (Key: string): Promise<Uint8Array | null> => {
 	return Body?.transformToByteArray() ?? null;
 };
 
-export const extractExternalImageId = (key: string) => {
-	const [CollectionId, ExternalImageId] = key
-		.replace("uploads/incoming/", "")
-		.replace(/\.jpe?g$/, "")
-		.split("/");
-
-	return {
-		CollectionId,
-		ExternalImageId,
-	};
-};
+export { extractExternalImageId } from "../helpers/commons";
 
 export const extractFacePicturePolicy = (
 	face: Face,

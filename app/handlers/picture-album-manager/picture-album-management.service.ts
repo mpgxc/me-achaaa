@@ -1,4 +1,5 @@
 import {
+	type AttributeValue,
 	DeleteItemCommand,
 	GetItemCommand,
 	PutItemCommand,
@@ -95,8 +96,12 @@ export class PictureAlbumManagementService {
 	async listAlbumFaces(
 		externalClientAlbumId: string,
 	): Promise<AlbumFaceRecord[]> {
-		const [dynamoResult, rekognitionResult] = await Promise.all([
-			this.dynamo.send(
+		// Collect all DynamoDB face records across pages
+		const dynamoItems: AlbumFaceRecord[] = [];
+		let exclusiveStartKey: Record<string, AttributeValue> | undefined;
+
+		do {
+			const result = await this.dynamo.send(
 				new QueryCommand({
 					TableName: this.dynamo.tableName,
 					KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",
@@ -104,22 +109,37 @@ export class PictureAlbumManagementService {
 						":pk": `ALBUM#${externalClientAlbumId}`,
 						":skPrefix": "FACE#",
 					}),
+					ExclusiveStartKey: exclusiveStartKey,
 				}),
-			),
-			this.rekognition.send(
+			);
+
+			for (const item of result.Items ?? []) {
+				dynamoItems.push(unmarshall(item) as AlbumFaceRecord);
+			}
+
+			exclusiveStartKey = result.LastEvaluatedKey;
+		} while (exclusiveStartKey);
+
+		// Collect all Rekognition face IDs across pages
+		const rekognitionFaceIds = new Set<string | undefined>();
+		let nextToken: string | undefined;
+
+		do {
+			const result = await this.rekognition.send(
 				new ListFacesCommand({
 					CollectionId: externalClientAlbumId,
+					NextToken: nextToken,
 				}),
-			),
-		]);
+			);
 
-		const rekognitionFaceIds = new Set(
-			(rekognitionResult.Faces ?? []).map((f) => f.FaceId),
-		);
+			for (const face of result.Faces ?? []) {
+				rekognitionFaceIds.add(face.FaceId);
+			}
 
-		return (dynamoResult.Items ?? [])
-			.map((item) => unmarshall(item) as AlbumFaceRecord)
-			.filter((f) => rekognitionFaceIds.has(f.FaceId));
+			nextToken = result.NextToken;
+		} while (nextToken);
+
+		return dynamoItems.filter((f) => rekognitionFaceIds.has(f.FaceId));
 	}
 
 	async createRekognitionCollection(
@@ -199,7 +219,7 @@ export class PictureAlbumManagementService {
 					Bucket: this.s3.bucketName,
 					Delete: {
 						Objects: Content.photos.map(({ s3Key }) => ({
-							Key: `uploads/${externalClientAlbumId}/${s3Key}`,
+							Key: `uploads/incoming/${externalClientAlbumId}/${s3Key}`,
 						})),
 						Quiet: true,
 					},
