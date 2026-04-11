@@ -226,7 +226,7 @@ describe("POST /albums/:externalClientAlbumId/upload-url", () => {
 			{
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ filename: "photo.jpg" }),
+				body: JSON.stringify({}),
 			},
 		);
 
@@ -247,23 +247,10 @@ describe("POST /albums/:externalClientAlbumId/upload-url", () => {
 			{
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ filename: "photo.jpg" }),
-			},
-		);
-
-		expect(res.status).toBe(404);
-	});
-
-	it("returns 400 when filename is missing", async () => {
-		const res = await pictureAlbumManagementRoute.request(
-			`/albums/${VALID_UUID}/upload-url`,
-			{
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({}),
 			},
 		);
 
-		expect(res.status).toBe(400);
+		expect(res.status).toBe(404);
 	});
 });

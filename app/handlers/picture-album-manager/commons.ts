@@ -45,9 +45,7 @@ export const AlbumFacesResponse = z
 	.openapi("AlbumFacesResponse");
 
 export const GenerateUploadUrlRequest = z
-	.object({
-		filename: z.string().min(1),
-	})
+	.object({})
 	.openapi("GenerateUploadUrlRequest");
 
 export const GenerateUploadUrlResponse = z
