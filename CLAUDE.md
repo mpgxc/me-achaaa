@@ -42,9 +42,12 @@ This is an **event-driven pipeline**, not a monolithic API. An upload triggers a
 - **Identity mapping:** `externalClientAlbumId` == Rekognition `CollectionId` == the album partition — all the same UUID. Album creation/deletion keeps the Rekognition collection, the DynamoDB metadata item, and an S3 placeholder folder in sync, with best-effort rollback on failure.
 - **AWS client singletons** (`app/providers.ts`) — `RekognitionSingleton`, `DynamoSingleton`, `S3Singleton`, `SqsSingleton` are instantiated at module load so Lambda warm-starts reuse connections. The Dynamo/S3/SQS singletons **extend** their client and expose env-backed getters (`tableName`, `bucketName`, `queueUrl`) that throw if the env var is missing. Always go through these rather than `new`-ing clients directly.
 - **DynamoDB single-table design** (table `...-rekognition-bucket-assets-controll`, `PK`/`SK`, plus a `SK-Index` GSI):
-  - Album metadata → `PK=ALBUM#{id}`, `SK=METADATA`
+  - Album metadata → `PK=ALBUM#{id}`, `SK=METADATA` (carries `TenantId` for multi-tenant scoping)
   - Image → `PK=ALBUM#{id}`, `SK=IMAGE#{externalImageId}`
   - Face → `PK=ALBUM#{id}`, `SK=FACE#{faceId}`
+  - Tenant → `PK=TENANT#{tenantId}`, `SK=METADATA`
+  - API key → `PK=APIKEY#{sha256(key)}`, `SK=METADATA` (stores only the key **hash** → `TenantId`)
+- **Auth & multi-tenancy** (`picture-album-manager/auth/`): all `/albums*` routes require an API key (`Authorization: Bearer <key>` or `x-api-key`) resolved to a tenant by `apiKeyAuth`; each album operation is scoped to the caller's tenant via `service.getAlbum(...).tenantId`. Tenant provisioning (`POST /tenants`) is guarded by the `ADMIN_API_KEY` env secret (`adminAuth`, timing-safe compare). Keys are generated with a `sls_` prefix and persisted only as a SHA-256 hash.
 - **S3 key layout:** `uploads/incoming/`, `uploads/faces/`, `uploads/thumbnails/`, each namespaced by `{collectionId}`.
 - **SQS batch handlers** return `{ batchItemFailures }` (`ReportBatchItemFailures`) so only failed messages are retried; per-message errors are caught and pushed to that array rather than thrown.
 - **Batched writes:** DynamoDB writes use `TransactWriteItemsCommand` chunked via `splitBatches` (`app/helpers/commons.ts`); the per-transaction cap is 50 items.

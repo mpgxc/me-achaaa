@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockCheckAlbumExists = vi.fn();
+const mockGetAlbum = vi.fn();
 const mockCreateRekognitionCollection = vi.fn();
 const mockCreateAlbumMetadata = vi.fn();
 const mockCreateBucketAlbum = vi.fn();
@@ -8,12 +8,11 @@ const mockDeleteRekognitionCollection = vi.fn();
 const mockDeleteBucketAlbumPlaceholder = vi.fn();
 const mockDeleteBucketAlbum = vi.fn();
 const mockDeleteAlbumMetadata = vi.fn();
-const mockGetAlbumMetadata = vi.fn();
 const mockListAlbumFaces = vi.fn();
 
 vi.mock("./picture-album-management.service", () => ({
 	PictureAlbumManagementService: class {
-		checkAlbumExists = mockCheckAlbumExists;
+		getAlbum = mockGetAlbum;
 		createRekognitionCollection = mockCreateRekognitionCollection;
 		createAlbumMetadata = mockCreateAlbumMetadata;
 		createBucketAlbum = mockCreateBucketAlbum;
@@ -21,8 +20,15 @@ vi.mock("./picture-album-management.service", () => ({
 		deleteBucketAlbumPlaceholder = mockDeleteBucketAlbumPlaceholder;
 		deleteBucketAlbum = mockDeleteBucketAlbum;
 		deleteAlbumMetadata = mockDeleteAlbumMetadata;
-		getAlbumMetadata = mockGetAlbumMetadata;
 		listAlbumFaces = mockListAlbumFaces;
+	},
+}));
+
+const mockResolveTenant = vi.fn();
+
+vi.mock("./auth/tenant.service", () => ({
+	TenantService: class {
+		resolveTenant = mockResolveTenant;
 	},
 }));
 
@@ -50,23 +56,56 @@ vi.mock("../../providers", () => ({
 }));
 
 const VALID_UUID = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
+const TENANT_ID = "tenant-1";
+const authHeaders = {
+	"Content-Type": "application/json",
+	Authorization: "Bearer test-key",
+};
 
 const { pictureAlbumManagementRoute } = await import(
 	"./picture-album-manager.routes"
 );
 
-describe("POST /albums", () => {
-	beforeEach(() => vi.clearAllMocks());
+// Por padrão, a API key é válida e resolve para TENANT_ID.
+beforeEach(() => {
+	vi.clearAllMocks();
+	mockGetSignedUrl.mockResolvedValue("https://s3.example.com/presigned");
+	mockResolveTenant.mockResolvedValue({ id: TENANT_ID });
+});
 
+describe("authentication", () => {
+	it("returns 401 when the API key is missing", async () => {
+		const res = await pictureAlbumManagementRoute.request(
+			`/albums/${VALID_UUID}`,
+			{ method: "GET" },
+		);
+
+		expect(res.status).toBe(401);
+		expect(mockResolveTenant).not.toHaveBeenCalled();
+	});
+
+	it("returns 401 when the API key is invalid", async () => {
+		mockResolveTenant.mockResolvedValue(null);
+
+		const res = await pictureAlbumManagementRoute.request(
+			`/albums/${VALID_UUID}`,
+			{ method: "GET", headers: authHeaders },
+		);
+
+		expect(res.status).toBe(401);
+	});
+});
+
+describe("POST /albums", () => {
 	it("returns 201 when album is created successfully", async () => {
-		mockCheckAlbumExists.mockResolvedValue(false);
+		mockGetAlbum.mockResolvedValue(null);
 		mockCreateRekognitionCollection.mockResolvedValue(undefined);
 		mockCreateAlbumMetadata.mockResolvedValue(undefined);
 		mockCreateBucketAlbum.mockResolvedValue(undefined);
 
 		const res = await pictureAlbumManagementRoute.request("/albums", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: authHeaders,
 			body: JSON.stringify({ externalClientAlbumId: VALID_UUID }),
 		});
 
@@ -74,14 +113,16 @@ describe("POST /albums", () => {
 		const body = await res.json();
 
 		expect(body.message).toContain("created");
+		// O álbum é criado já vinculado ao tenant autenticado.
+		expect(mockCreateAlbumMetadata).toHaveBeenCalledWith(VALID_UUID, TENANT_ID);
 	});
 
 	it("returns 409 when album already exists", async () => {
-		mockCheckAlbumExists.mockResolvedValue(true);
+		mockGetAlbum.mockResolvedValue({ tenantId: TENANT_ID, content: {} });
 
 		const res = await pictureAlbumManagementRoute.request("/albums", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: authHeaders,
 			body: JSON.stringify({ externalClientAlbumId: VALID_UUID }),
 		});
 
@@ -89,7 +130,7 @@ describe("POST /albums", () => {
 	});
 
 	it("returns 500 and performs rollback when creation fails", async () => {
-		mockCheckAlbumExists.mockResolvedValue(false);
+		mockGetAlbum.mockResolvedValue(null);
 		mockCreateRekognitionCollection.mockResolvedValue(undefined);
 		mockCreateAlbumMetadata.mockRejectedValue(new Error("DynamoDB error"));
 		mockDeleteRekognitionCollection.mockResolvedValue(undefined);
@@ -97,7 +138,7 @@ describe("POST /albums", () => {
 
 		const res = await pictureAlbumManagementRoute.request("/albums", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: authHeaders,
 			body: JSON.stringify({ externalClientAlbumId: VALID_UUID }),
 		});
 
@@ -109,7 +150,7 @@ describe("POST /albums", () => {
 	it("returns 400 when externalClientAlbumId is not a valid UUID", async () => {
 		const res = await pictureAlbumManagementRoute.request("/albums", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: authHeaders,
 			body: JSON.stringify({ externalClientAlbumId: "not-a-uuid" }),
 		});
 
@@ -118,47 +159,59 @@ describe("POST /albums", () => {
 });
 
 describe("DELETE /albums/:externalClientAlbumId", () => {
-	beforeEach(() => vi.clearAllMocks());
-
 	it("returns 200 when album is deleted", async () => {
-		mockCheckAlbumExists.mockResolvedValue(true);
+		mockGetAlbum.mockResolvedValue({ tenantId: TENANT_ID, content: {} });
 		mockDeleteRekognitionCollection.mockResolvedValue(undefined);
 		mockDeleteBucketAlbum.mockResolvedValue(undefined);
 		mockDeleteAlbumMetadata.mockResolvedValue(undefined);
 
 		const res = await pictureAlbumManagementRoute.request(
 			`/albums/${VALID_UUID}`,
-			{ method: "DELETE" },
+			{ method: "DELETE", headers: authHeaders },
 		);
 
 		expect(res.status).toBe(200);
 	});
 
 	it("returns 404 when album does not exist", async () => {
-		mockCheckAlbumExists.mockResolvedValue(false);
+		mockGetAlbum.mockResolvedValue(null);
 
 		const res = await pictureAlbumManagementRoute.request(
 			`/albums/${VALID_UUID}`,
-			{ method: "DELETE" },
+			{ method: "DELETE", headers: authHeaders },
 		);
 
 		expect(res.status).toBe(404);
 	});
+
+	it("returns 404 when the album belongs to another tenant", async () => {
+		mockGetAlbum.mockResolvedValue({ tenantId: "other-tenant", content: {} });
+
+		const res = await pictureAlbumManagementRoute.request(
+			`/albums/${VALID_UUID}`,
+			{ method: "DELETE", headers: authHeaders },
+		);
+
+		expect(res.status).toBe(404);
+		// Não deve tentar deletar recursos de outro tenant.
+		expect(mockDeleteRekognitionCollection).not.toHaveBeenCalled();
+	});
 });
 
 describe("GET /albums/:externalClientAlbumId", () => {
-	beforeEach(() => vi.clearAllMocks());
-
 	it("returns 200 with album metadata", async () => {
-		mockGetAlbumMetadata.mockResolvedValue({
-			externalClientAlbumId: VALID_UUID,
-			photos: [],
-			faces: [],
+		mockGetAlbum.mockResolvedValue({
+			tenantId: TENANT_ID,
+			content: {
+				externalClientAlbumId: VALID_UUID,
+				photos: [],
+				faces: [],
+			},
 		});
 
 		const res = await pictureAlbumManagementRoute.request(
 			`/albums/${VALID_UUID}`,
-			{ method: "GET" },
+			{ method: "GET", headers: authHeaders },
 		);
 
 		expect(res.status).toBe(200);
@@ -168,11 +221,25 @@ describe("GET /albums/:externalClientAlbumId", () => {
 	});
 
 	it("returns 404 when album is not found", async () => {
-		mockGetAlbumMetadata.mockResolvedValue(null);
+		mockGetAlbum.mockResolvedValue(null);
 
 		const res = await pictureAlbumManagementRoute.request(
 			`/albums/${VALID_UUID}`,
-			{ method: "GET" },
+			{ method: "GET", headers: authHeaders },
+		);
+
+		expect(res.status).toBe(404);
+	});
+
+	it("returns 404 when the album belongs to another tenant", async () => {
+		mockGetAlbum.mockResolvedValue({
+			tenantId: "other-tenant",
+			content: { externalClientAlbumId: VALID_UUID, photos: [], faces: [] },
+		});
+
+		const res = await pictureAlbumManagementRoute.request(
+			`/albums/${VALID_UUID}`,
+			{ method: "GET", headers: authHeaders },
 		);
 
 		expect(res.status).toBe(404);
@@ -180,10 +247,8 @@ describe("GET /albums/:externalClientAlbumId", () => {
 });
 
 describe("GET /albums/:externalClientAlbumId/faces", () => {
-	beforeEach(() => vi.clearAllMocks());
-
 	it("returns 200 with faces list", async () => {
-		mockCheckAlbumExists.mockResolvedValue(true);
+		mockGetAlbum.mockResolvedValue({ tenantId: TENANT_ID, content: {} });
 		mockListAlbumFaces.mockResolvedValue([
 			{
 				FaceId: "face-1",
@@ -194,7 +259,7 @@ describe("GET /albums/:externalClientAlbumId/faces", () => {
 
 		const res = await pictureAlbumManagementRoute.request(
 			`/albums/${VALID_UUID}/faces`,
-			{ method: "GET" },
+			{ method: "GET", headers: authHeaders },
 		);
 
 		expect(res.status).toBe(200);
@@ -204,11 +269,11 @@ describe("GET /albums/:externalClientAlbumId/faces", () => {
 	});
 
 	it("returns 404 when album does not exist", async () => {
-		mockCheckAlbumExists.mockResolvedValue(false);
+		mockGetAlbum.mockResolvedValue(null);
 
 		const res = await pictureAlbumManagementRoute.request(
 			`/albums/${VALID_UUID}/faces`,
-			{ method: "GET" },
+			{ method: "GET", headers: authHeaders },
 		);
 
 		expect(res.status).toBe(404);
@@ -216,16 +281,14 @@ describe("GET /albums/:externalClientAlbumId/faces", () => {
 });
 
 describe("POST /albums/:externalClientAlbumId/upload-url", () => {
-	beforeEach(() => vi.clearAllMocks());
-
 	it("returns 200 with uploadUrl and key when album exists", async () => {
-		mockCheckAlbumExists.mockResolvedValue(true);
+		mockGetAlbum.mockResolvedValue({ tenantId: TENANT_ID, content: {} });
 
 		const res = await pictureAlbumManagementRoute.request(
 			`/albums/${VALID_UUID}/upload-url`,
 			{
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: authHeaders,
 				body: JSON.stringify({}),
 			},
 		);
@@ -240,13 +303,13 @@ describe("POST /albums/:externalClientAlbumId/upload-url", () => {
 	});
 
 	it("returns 404 when album does not exist", async () => {
-		mockCheckAlbumExists.mockResolvedValue(false);
+		mockGetAlbum.mockResolvedValue(null);
 
 		const res = await pictureAlbumManagementRoute.request(
 			`/albums/${VALID_UUID}/upload-url`,
 			{
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: authHeaders,
 				body: JSON.stringify({}),
 			},
 		);

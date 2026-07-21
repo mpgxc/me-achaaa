@@ -3,6 +3,9 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { S3Singleton } from "../../providers";
+import { apiKeyAuth } from "./auth/auth.middleware";
+import { TenantService } from "./auth/tenant.service";
+import type { AppEnv } from "./auth/types";
 import { PictureAlbumManagementService } from "./picture-album-management.service";
 import {
 	deleteAlbumRoute,
@@ -12,26 +15,31 @@ import {
 	registerAlbumRoute,
 } from "./picture-album-manager.openapi";
 
-export const pictureAlbumManagementRoute = new OpenAPIHono();
+export const pictureAlbumManagementRoute = new OpenAPIHono<AppEnv>();
 
 const albumManagementService = new PictureAlbumManagementService();
+const tenantService = new TenantService();
 const s3Client = S3Singleton.getInstance();
 
 const PRESIGNED_URL_EXPIRES_IN_SECONDS = 300; // 5 minutes
 
+// Todas as rotas de álbum exigem uma API key válida e são escopadas ao tenant.
+pictureAlbumManagementRoute.use("*", apiKeyAuth(tenantService));
+
 pictureAlbumManagementRoute.openapi(registerAlbumRoute, async (ctx) => {
 	const { externalClientAlbumId } = ctx.req.valid("json");
+	const tenant = ctx.get("tenant");
 
 	console.info(
 		`Creating album with externalClientAlbumId: ${externalClientAlbumId}`,
 	);
 
 	try {
-		const exists = await albumManagementService.checkAlbumExists(
+		const existing = await albumManagementService.getAlbum(
 			externalClientAlbumId,
 		);
 
-		if (exists) {
+		if (existing) {
 			return ctx.json(
 				{
 					message: "Album already exists",
@@ -44,7 +52,10 @@ pictureAlbumManagementRoute.openapi(registerAlbumRoute, async (ctx) => {
 			externalClientAlbumId,
 		);
 
-		await albumManagementService.createAlbumMetadata(externalClientAlbumId);
+		await albumManagementService.createAlbumMetadata(
+			externalClientAlbumId,
+			tenant.id,
+		);
 
 		await albumManagementService.createBucketAlbum(externalClientAlbumId);
 
@@ -78,17 +89,16 @@ pictureAlbumManagementRoute.openapi(registerAlbumRoute, async (ctx) => {
 
 pictureAlbumManagementRoute.openapi(deleteAlbumRoute, async (ctx) => {
 	const { externalClientAlbumId } = ctx.req.param();
+	const tenant = ctx.get("tenant");
 
 	console.info(
 		`Deleting album with externalClientAlbumId: ${externalClientAlbumId}`,
 	);
 
 	try {
-		const exists = await albumManagementService.checkAlbumExists(
-			externalClientAlbumId,
-		);
+		const album = await albumManagementService.getAlbum(externalClientAlbumId);
 
-		if (!exists) {
+		if (!album || album.tenantId !== tenant.id) {
 			return ctx.json(
 				{
 					message: "Album does not exist",
@@ -96,6 +106,7 @@ pictureAlbumManagementRoute.openapi(deleteAlbumRoute, async (ctx) => {
 				404,
 			);
 		}
+
 		await albumManagementService.deleteRekognitionCollection(
 			externalClientAlbumId,
 		);
@@ -124,13 +135,12 @@ pictureAlbumManagementRoute.openapi(deleteAlbumRoute, async (ctx) => {
 
 pictureAlbumManagementRoute.openapi(getAlbumRoute, async (ctx) => {
 	const { externalClientAlbumId } = ctx.req.param();
+	const tenant = ctx.get("tenant");
 
 	try {
-		const content = await albumManagementService.getAlbumMetadata(
-			externalClientAlbumId,
-		);
+		const album = await albumManagementService.getAlbum(externalClientAlbumId);
 
-		if (!content) {
+		if (!album || album.tenantId !== tenant.id) {
 			return ctx.json(
 				{
 					message: "Album not found",
@@ -139,7 +149,7 @@ pictureAlbumManagementRoute.openapi(getAlbumRoute, async (ctx) => {
 			);
 		}
 
-		return ctx.json(content, 200);
+		return ctx.json(album.content, 200);
 	} catch (error) {
 		console.error("Error fetching album metadata:", error);
 
@@ -155,13 +165,12 @@ pictureAlbumManagementRoute.openapi(getAlbumRoute, async (ctx) => {
 
 pictureAlbumManagementRoute.openapi(listAlbumFacesRoute, async (ctx) => {
 	const { externalClientAlbumId } = ctx.req.param();
+	const tenant = ctx.get("tenant");
 
 	try {
-		const exists = await albumManagementService.checkAlbumExists(
-			externalClientAlbumId,
-		);
+		const album = await albumManagementService.getAlbum(externalClientAlbumId);
 
-		if (!exists) {
+		if (!album || album.tenantId !== tenant.id) {
 			return ctx.json(
 				{
 					message: "Album not found",
@@ -190,13 +199,12 @@ pictureAlbumManagementRoute.openapi(listAlbumFacesRoute, async (ctx) => {
 
 pictureAlbumManagementRoute.openapi(generateUploadUrlRoute, async (ctx) => {
 	const { externalClientAlbumId } = ctx.req.param();
+	const tenant = ctx.get("tenant");
 
 	try {
-		const exists = await albumManagementService.checkAlbumExists(
-			externalClientAlbumId,
-		);
+		const album = await albumManagementService.getAlbum(externalClientAlbumId);
 
-		if (!exists) {
+		if (!album || album.tenantId !== tenant.id) {
 			return ctx.json(
 				{
 					message: "Album not found",
