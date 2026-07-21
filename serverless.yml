@@ -35,6 +35,7 @@ provider:
         - "rekognition:CreateCollection"
         - "rekognition:DeleteCollection"
         - "rekognition:ListCollections"
+        - "rekognition:DeleteFaces"
       Resource:
         - !Sub "arn:aws:rekognition:${AWS::Region}:${AWS::AccountId}:collection/*"
     - Effect: "Allow"
@@ -172,6 +173,9 @@ functions:
       - httpApi:
           path: /albums/{externalClientAlbumId}/faces
           method: GET
+      - httpApi:
+          path: /albums/{externalClientAlbumId}/faces/{faceId}
+          method: DELETE
       - httpApi:
           path: /albums/{externalClientAlbumId}/upload-url
           method: POST

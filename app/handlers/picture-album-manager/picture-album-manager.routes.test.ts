@@ -9,6 +9,7 @@ const mockDeleteBucketAlbumPlaceholder = vi.fn();
 const mockDeleteBucketAlbum = vi.fn();
 const mockDeleteAlbumMetadata = vi.fn();
 const mockListAlbumFaces = vi.fn();
+const mockDeleteFace = vi.fn();
 
 vi.mock("./picture-album-management.service", () => ({
 	PictureAlbumManagementService: class {
@@ -21,6 +22,7 @@ vi.mock("./picture-album-management.service", () => ({
 		deleteBucketAlbum = mockDeleteBucketAlbum;
 		deleteAlbumMetadata = mockDeleteAlbumMetadata;
 		listAlbumFaces = mockListAlbumFaces;
+		deleteFace = mockDeleteFace;
 	},
 }));
 
@@ -277,6 +279,56 @@ describe("GET /albums/:externalClientAlbumId/faces", () => {
 		);
 
 		expect(res.status).toBe(404);
+	});
+});
+
+describe("DELETE /albums/:externalClientAlbumId/faces/:faceId", () => {
+	const FACE_ID = "11111111-2222-3333-4444-555555555555";
+
+	it("returns 200 when the face is deleted", async () => {
+		mockGetAlbum.mockResolvedValue({ tenantId: TENANT_ID, content: {} });
+		mockDeleteFace.mockResolvedValue(true);
+
+		const res = await pictureAlbumManagementRoute.request(
+			`/albums/${VALID_UUID}/faces/${FACE_ID}`,
+			{ method: "DELETE", headers: authHeaders },
+		);
+
+		expect(res.status).toBe(200);
+		expect(mockDeleteFace).toHaveBeenCalledWith(VALID_UUID, FACE_ID);
+	});
+
+	it("returns 404 when the face does not exist", async () => {
+		mockGetAlbum.mockResolvedValue({ tenantId: TENANT_ID, content: {} });
+		mockDeleteFace.mockResolvedValue(false);
+
+		const res = await pictureAlbumManagementRoute.request(
+			`/albums/${VALID_UUID}/faces/${FACE_ID}`,
+			{ method: "DELETE", headers: authHeaders },
+		);
+
+		expect(res.status).toBe(404);
+	});
+
+	it("returns 404 when the album belongs to another tenant", async () => {
+		mockGetAlbum.mockResolvedValue({ tenantId: "other-tenant", content: {} });
+
+		const res = await pictureAlbumManagementRoute.request(
+			`/albums/${VALID_UUID}/faces/${FACE_ID}`,
+			{ method: "DELETE", headers: authHeaders },
+		);
+
+		expect(res.status).toBe(404);
+		expect(mockDeleteFace).not.toHaveBeenCalled();
+	});
+
+	it("returns 401 without an API key", async () => {
+		const res = await pictureAlbumManagementRoute.request(
+			`/albums/${VALID_UUID}/faces/${FACE_ID}`,
+			{ method: "DELETE" },
+		);
+
+		expect(res.status).toBe(401);
 	});
 });
 

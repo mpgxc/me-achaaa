@@ -58,3 +58,8 @@ export const GenerateUploadUrlResponse = z
 export const AlbumIdParam = z.object({
 	externalClientAlbumId: z.string().uuid(),
 });
+
+export const AlbumFaceParam = z.object({
+	externalClientAlbumId: z.string().uuid(),
+	faceId: z.string().uuid(),
+});

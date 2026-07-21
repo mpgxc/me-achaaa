@@ -8,6 +8,7 @@ import { TenantService } from "./auth/tenant.service";
 import type { AppEnv } from "./auth/types";
 import { PictureAlbumManagementService } from "./picture-album-management.service";
 import {
+	deleteAlbumFaceRoute,
 	deleteAlbumRoute,
 	generateUploadUrlRoute,
 	getAlbumRoute,
@@ -190,6 +191,40 @@ pictureAlbumManagementRoute.openapi(listAlbumFacesRoute, async (ctx) => {
 		return ctx.json(
 			{
 				message: "Failed to list album faces",
+				error: error instanceof Error ? error.message : String(error),
+			},
+			500,
+		);
+	}
+});
+
+pictureAlbumManagementRoute.openapi(deleteAlbumFaceRoute, async (ctx) => {
+	const { externalClientAlbumId, faceId } = ctx.req.param();
+	const tenant = ctx.get("tenant");
+
+	try {
+		const album = await albumManagementService.getAlbum(externalClientAlbumId);
+
+		if (!album || album.tenantId !== tenant.id) {
+			return ctx.json({ message: "Album not found" }, 404);
+		}
+
+		const deleted = await albumManagementService.deleteFace(
+			externalClientAlbumId,
+			faceId,
+		);
+
+		if (!deleted) {
+			return ctx.json({ message: "Face not found" }, 404);
+		}
+
+		return ctx.json({ message: "Face deleted" }, 200);
+	} catch (error) {
+		console.error("Error deleting face:", error);
+
+		return ctx.json(
+			{
+				message: "Failed to delete face",
 				error: error instanceof Error ? error.message : String(error),
 			},
 			500,
