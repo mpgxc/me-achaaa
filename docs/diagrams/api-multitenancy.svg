@@ -1,0 +1,76 @@
+<svg viewBox="0 0 1000 700" xmlns="http://www.w3.org/2000/svg" font-family="'Inter', -apple-system, 'Segoe UI', Roboto, system-ui, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="7" refX="7.5" refY="3.5" orient="auto">
+      <path d="M0,0 L8,3.5 L0,7 Z" fill="#a8a29a"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="700" fill="#ffffff"/>
+
+  <!-- TITLE -->
+  <text x="500" y="42" fill="#8a8a8a" font-size="15" font-weight="600" text-anchor="middle"
+        letter-spacing="0.12em" style="text-transform:uppercase">api síncrona · multi-tenancy</text>
+
+  <!-- BOUNDARY: rotas escopadas ao tenant -->
+  <rect x="120" y="342" width="760" height="150" rx="12" fill="none" stroke="#3a9975" stroke-width="1.25" stroke-dasharray="6,5"/>
+  <rect x="138" y="334" width="230" height="16" fill="#ffffff"/>
+  <text x="142" y="346" fill="#3a9975" font-size="11" font-weight="600">ROTAS ESCOPADAS AO TENANT</text>
+
+  <!-- ARROWS (behind blocks) -->
+  <!-- requisicao -> apiKeyAuth -->
+  <line x1="500" y1="128" x2="500" y2="178" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- apiKeyAuth -> 401 (branch) -->
+  <line x1="660" y1="224" x2="754" y2="224" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- apiKeyAuth -> stub -->
+  <line x1="500" y1="270" x2="500" y2="322" stroke="#a8a29a" stroke-width="1.5"/>
+  <!-- stub -> /albums and /search -->
+  <path d="M 500 322 C 420 322, 340 340, 300 360" fill="none" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 500 322 C 580 322, 660 340, 710 360" fill="none" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- routes -> ownership gate -->
+  <path d="M 300 470 C 300 516, 380 528, 434 552" fill="none" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 710 470 C 710 516, 632 528, 578 552" fill="none" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ARROW LABELS -->
+  <rect x="404" y="146" width="192" height="15" fill="#ffffff"/>
+  <text x="500" y="157" fill="#8a8a8a" font-size="11" text-anchor="middle">Authorization: Bearer &lt;key&gt;</text>
+  <rect x="676" y="206" width="60" height="15" fill="#ffffff"/>
+  <text x="706" y="217" fill="#8a8a8a" font-size="11" text-anchor="middle">inválida</text>
+  <rect x="504" y="288" width="128" height="15" fill="#ffffff"/>
+  <text x="568" y="299" fill="#8a8a8a" font-size="11" text-anchor="middle">tenant no contexto</text>
+
+  <!-- BLOCKS -->
+  <!-- requisicao (neutral, pill) -->
+  <rect x="360" y="72" width="280" height="56" rx="28" fill="#ffffff"/>
+  <rect x="360" y="72" width="280" height="56" rx="28" fill="#f1efe8" stroke="#d8d4c4" stroke-width="1.25"/>
+  <text x="500" y="106" fill="#4a4a4a" font-size="15" font-weight="500" text-anchor="middle">requisição do cliente</text>
+
+  <!-- apiKeyAuth (gate) -->
+  <rect x="340" y="178" width="320" height="92" rx="10" fill="#ffffff"/>
+  <rect x="340" y="178" width="320" height="92" rx="10" fill="#e1f4ee" stroke="#9dd3c2" stroke-width="1.25"/>
+  <text x="500" y="218" fill="#1f6a56" font-size="15" font-weight="500" text-anchor="middle">apiKeyAuth</text>
+  <text x="500" y="240" fill="#2f8a72" font-size="11" font-weight="500" text-anchor="middle">hash SHA-256 → resolve tenant</text>
+
+  <!-- 401 (neutral, pill) -->
+  <rect x="756" y="196" width="150" height="56" rx="28" fill="#ffffff"/>
+  <rect x="756" y="196" width="150" height="56" rx="28" fill="#f1efe8" stroke="#d8d4c4" stroke-width="1.25"/>
+  <text x="831" y="230" fill="#4a4a4a" font-size="15" font-weight="500" text-anchor="middle">401</text>
+
+  <!-- /albums* (compute) -->
+  <rect x="150" y="366" width="300" height="104" rx="10" fill="#ffffff"/>
+  <rect x="150" y="366" width="300" height="104" rx="10" fill="#eeedfe" stroke="#b9b5e8" stroke-width="1.25"/>
+  <text x="300" y="410" fill="#3a3560" font-size="15" font-weight="500" text-anchor="middle">/albums*</text>
+  <text x="300" y="432" fill="#6a63b0" font-size="11" font-weight="500" text-anchor="middle">CRUD · upload-url · erasure de face</text>
+
+  <!-- /search* (compute) -->
+  <rect x="560" y="366" width="300" height="104" rx="10" fill="#ffffff"/>
+  <rect x="560" y="366" width="300" height="104" rx="10" fill="#eeedfe" stroke="#b9b5e8" stroke-width="1.25"/>
+  <text x="710" y="410" fill="#3a3560" font-size="15" font-weight="500" text-anchor="middle">/search*</text>
+  <text x="710" y="432" fill="#6a63b0" font-size="11" font-weight="500" text-anchor="middle">por imagem · por faceId</text>
+
+  <!-- ownership gate (gate) -->
+  <rect x="350" y="552" width="300" height="88" rx="10" fill="#ffffff"/>
+  <rect x="350" y="552" width="300" height="88" rx="10" fill="#e1f4ee" stroke="#9dd3c2" stroke-width="1.25"/>
+  <text x="500" y="590" fill="#1f6a56" font-size="15" font-weight="500" text-anchor="middle">verificação de posse</text>
+  <text x="500" y="612" fill="#2f8a72" font-size="11" font-weight="500" text-anchor="middle">album.tenantId == tenant · senão 404</text>
+
+</svg>

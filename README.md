@@ -1,123 +1,145 @@
-Ideias 💡
+# sls-find.me — Face Search Engine
 
-Ter um função para gerar os rostos únicos de referências para as pesquisas fotos dentro dos albums.
+> Motor de **busca facial** serverless sobre **AWS Rekognition**. Multi-tenant, autenticado por API key, com um pipeline de processamento **event-driven** e **notificação de conclusão** via webhook.
 
-- Utilizar das fotos das pessoas em que elas aparecem sozinhas (Ajuda a conseguir um bom recorte dp rosto e área da cabeça)
+O cliente sobe fotos para dentro de "coleções" (álbuns) do Rekognition; o sistema indexa os rostos, recorta cada face, gera thumbnails com marca d'água e expõe endpoints REST para buscar rostos semelhantes — por imagem ou por `faceId`.
+
+Comentários de código e mensagens da API são escritos em **português (pt-BR)**.
 
 ---
 
-Amazon Rekognition
+## Proposta
 
-- SearchFacesByImage
-- SearchFaces
-- ListFaces
-- IndexFaces
-- DetectFaces
+Dado um conjunto de fotos, responder rápido à pergunta: **"em quais fotos esta pessoa aparece?"**
 
-Como uma API Rest.
+- **Ingestão** — o cliente faz upload das imagens; cada rosto é detectado, indexado e recortado de forma assíncrona.
+- **Busca** — envia-se uma foto (ou um `faceId` já conhecido) e recebe-se a lista de imagens com rostos semelhantes acima de um limiar de similaridade.
+- **Multi-tenancy** — cada cliente (tenant) é isolado por API key; um álbum só é visível/operável pelo tenant que o criou.
+- **LGPD** — como o dado é biométrico (sensível), há **direito ao esquecimento**: deleção de uma face remove-a do Rekognition, do S3 e do DynamoDB.
+- **Notificação** — quando o processamento de um upload termina, o tenant é avisado por webhook (`image.processed`).
 
-# Face Search Engine usando AWS Rekognition e Arquitetura Serverless
+---
 
-## Visão Geral
+## Arquitetura
 
-Este documento descreve a arquitetura, fluxos de operações, e definições de métodos de uma API para um Face Search Engine. O sistema identifica, indexa, e busca rostos utilizando AWS Rekognition. A implementação utiliza AWS Lambda para a lógica de backend e AWS API Gateway para expor a API REST.
+O sistema tem **duas metades** que compartilham os mesmos dados: uma **API síncrona** (autenticada) e um **pipeline assíncrono** (event-driven). Ambas conversam com DynamoDB, S3 e Rekognition.
 
-## Arquitetura do Sistema
+<p align="center">
+  <img src="docs/diagrams/arquitetura.svg" width="860" alt="Arquitetura — visão geral">
+</p>
 
-### Componentes Principais
+- **API síncrona** — um único app **Hono** (`OpenAPIHono`) empacotado como um Lambda, servindo `/tenants`, `/albums*` e `/search*`. Toda a superfície é autenticada.
+- **Pipeline assíncrono** — uma cadeia de Lambdas desacoplada por **SQS**, disparada por eventos do S3. Faz o trabalho pesado (indexação, recorte, thumbnail) fora do caminho da requisição.
+- **Dados & IA** — DynamoDB (single-table), S3 (imagens/recortes/thumbnails) e Rekognition (index/detect/search).
 
-- **AWS API Gateway:** Interface de entrada para as requisições REST.
-- **AWS Lambda:** Funções serverless que contêm a lógica de negócio.
-- **AWS Rekognition:** Serviço de análise de imagens para detecção e comparação de rostos.
-- **Amazon S3:** Armazenamento das imagens.
-- **Amazon DynamoDB:** Armazenamento de metadados e referências das faces indexadas.
+### Pipeline de ingestão (assíncrono)
 
-### Fluxo de Operações
+Um upload dispara um fan-out de Lambdas. Nada disso está no caminho síncrono da requisição do cliente.
 
-1. **Indexação de Faces:**
+<p align="center">
+  <img src="docs/diagrams/pipeline-ingestao.svg" width="560" alt="Pipeline de ingestão">
+</p>
 
-   - Usuário envia uma imagem para a API.
-   - A API Gateway invoca uma função Lambda para processar a imagem.
-   - A função Lambda utiliza `IndexFaces` do AWS Rekognition para detectar e indexar as faces na imagem.
-   - Os metadados das faces indexadas são armazenados no DynamoDB.
+1. **Upload** — o cliente pega uma URL S3 pré-assinada (rota `/albums/{id}/upload-url`) e envia a imagem para `uploads/incoming/{collectionId}/{imageId}.jpg`.
+2. **S3 → SQS** — o evento `s3:ObjectCreated` empurra para a `FaceRecognitionQueue`.
+3. **`DetectAndIndexFaces`** — consome a fila, chama `IndexFaces` no Rekognition, grava o item `IMAGE#` e faz **fan-out** para duas filas.
+4. **`ImageExtractFace`** — recorta cada rosto com `sharp`, salva em `uploads/faces/...`, grava os registros `FACE#` e emite `image.processed` na `NotificationQueue`.
+5. **`ImageThumbnailGenerator`** — redimensiona e aplica a marca d'água, salvando em `uploads/thumbnails/...`.
+6. **`NotificationDispatcher`** — consome a `NotificationQueue`, resolve o `webhookUrl` do tenant e faz `POST` do evento (com retry + DLQ do SQS).
 
-2. **Busca por Imagem:**
+> Confiabilidade: as filas de processamento têm `maxReceiveCount: 3` (retry antes da DLQ) e os handlers usam `ReportBatchItemFailures` — um erro nunca é engolido silenciosamente, ele reprocessa.
 
-   - Usuário envia uma imagem para busca.
-   - A API Gateway invoca uma função Lambda para processar a imagem.
-   - A função Lambda utiliza `SearchFacesByImage` para buscar faces semelhantes na coleção de faces indexadas.
-   - Retorna os resultados para o usuário.
+### API síncrona & multi-tenancy
 
-3. **Busca por FaceId:**
+Toda rota de `/albums*` e `/search*` passa pelo middleware `apiKeyAuth`, que resolve o tenant a partir da API key e injeta-o no contexto. Cada operação é então escopada ao tenant dono do álbum.
 
-   - Usuário fornece um faceId para busca.
-   - A API Gateway invoca uma função Lambda para processar a busca.
-   - A função Lambda utiliza `SearchFaces` para buscar faces semelhantes baseadas no faceId fornecido.
-   - Retorna os resultados para o usuário.
+<p align="center">
+  <img src="docs/diagrams/api-multitenancy.svg" width="820" alt="API síncrona & multi-tenancy">
+</p>
 
-4. **Listagem de Faces:**
+- **Autenticação** — `Authorization: Bearer <key>` (ou header `x-api-key`). A key é buscada por `APIKEY#{sha256(key)}`; só o **hash** é persistido.
+- **Escopo por tenant** — antes de qualquer operação, verifica-se `album.tenantId == tenant` — senão **404** (sem vazar existência entre tenants).
+- **Provisionamento** — `POST /tenants` cria um tenant e emite a primeira API key. É protegido pelo segredo `ADMIN_API_KEY` (middleware `adminAuth`, comparação timing-safe), **não** pela API key de tenant.
 
-   - Usuário solicita a listagem de todas as faces indexadas.
-   - A API Gateway invoca uma função Lambda que utiliza `ListFaces` para listar todas as faces na coleção.
-   - Retorna os metadados das faces para o usuário.
+---
 
-5. **Detecção de Faces:**
-   - Usuário envia uma imagem para detectar rostos.
-   - A API Gateway invoca uma função Lambda para processar a imagem.
-   - A função Lambda utiliza `DetectFaces` para detectar rostos na imagem.
-   - Retorna os detalhes das faces detectadas para o usuário.
+## Modelo de dados (DynamoDB single-table)
 
-### Desenho da Arquitetura
+Tabela `...-rekognition-bucket-assets-controll`, chaves `PK`/`SK`, com um GSI `SK-Index`.
 
-## Arquitetura do Sistema
+| Entidade | PK | SK | Observações |
+|---|---|---|---|
+| Álbum | `ALBUM#{id}` | `METADATA` | carrega `TenantId` |
+| Imagem | `ALBUM#{id}` | `IMAGE#{externalImageId}` | thumbnail + original + faces |
+| Face | `ALBUM#{id}` | `FACE#{faceId}` | `Confidence`, `ExternalImageId` |
+| Tenant | `TENANT#{id}` | `METADATA` | `WebhookUrl` opcional |
+| API key | `APIKEY#{sha256(key)}` | `METADATA` | mapeia para `TenantId` (só o hash) |
 
-```mermaid
-graph TD
-Client[Cliente] -->|Upload Imagem| S3[S3 Bucket]
-S3 -->|Evento s3:ObjectCreated| SQS[SQS Queue]
-SQS -->|Trigger| Lambda1[Lambda DetectAndIndexFaces]
-Lambda1 -->|Index Faces| Rekognition[AWS Rekognition]
-Lambda1 -->|Atualizar Metadata| DynamoDB[DynamoDB]
-Client -->|Buscar Faces| API[API Gateway]
-API -->|Request| Lambda2[Lambda FindSimilarFaces]
-Lambda2 -->|Consulta| Rekognition
-Lambda2 -->|Buscar Metadata| DynamoDB
+**Identidade unificada:** `externalClientAlbumId` == `CollectionId` do Rekognition == a partição do álbum — todos o mesmo UUID.
+
+**Layout no S3:** `uploads/incoming/`, `uploads/faces/`, `uploads/thumbnails/`, cada um namespaced por `{collectionId}`.
+
+---
+
+## Endpoints
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `POST` | `/tenants` | Provisiona um tenant + API key (admin, `x-admin-key`) |
+| `POST` | `/albums` | Cria um álbum (+ coleção Rekognition + pasta S3) |
+| `GET` | `/albums/{id}` | Metadados do álbum |
+| `DELETE` | `/albums/{id}` | Remove álbum, coleção e objetos |
+| `GET` | `/albums/{id}/faces` | Lista as faces indexadas |
+| `DELETE` | `/albums/{id}/faces/{faceId}` | **Erasure de face (LGPD)** — Rekognition + S3 + Dynamo |
+| `POST` | `/albums/{id}/upload-url` | URL S3 pré-assinada para upload |
+| `POST` | `/search` | Busca por imagem (header `x-collection-id`, body `{ image }` base64) |
+| `POST` | `/search/by-face-id` | Busca por `faceId` (header `x-collection-id`, body `{ faceId }`) |
+
+Docs interativas: **Swagger UI** em `/api/docs` e **Scalar** em `/api/docs/scalar`.
+
+---
+
+## Stack
+
+- **Linguagem:** TypeScript · **Runtime:** Node (local `v22.22.2` no `.nvmrc`; Lambdas em `nodejs20.x`)
+- **API:** [Hono](https://hono.dev) (`@hono/zod-openapi`) — rotas declaradas com schemas Zod
+- **IaC:** Serverless Framework v4 → CloudFormation (Lambda, API Gateway, S3, SQS, DynamoDB, Rekognition)
+- **Imagem:** `sharp` (via Lambda layer nativo)
+- **Testes:** Vitest · **Lint/format:** Biome (tabs, aspas duplas)
+
+---
+
+## Comandos
+
+```bash
+npm run build          # limpa build/, compila (tsc) e copia assets
+npm run dev            # nodemon + serverless offline em 0.0.0.0:4000
+npm test               # vitest (watch)
+npm run coverage       # cobertura
+npm run lint           # biome check --write
+
+npm run deploy:dev     # sls deploy --stage dev
+npm run deploy:hml     # sls deploy --stage hml
+npm run deploy:prd     # sls deploy --stage prd
 ```
 
-## Fluxo de Processamento
+Rodar um único teste:
 
-### 1. Upload de Imagem
-
-```mermaid
-sequenceDiagram
-    participant Cliente
-    participant S3 as S3 Bucket
-    participant SQS as SQS Queue
-    participant Lambda as DetectAndIndexFaces
-    participant Rekognition
-    participant DynamoDB
-
-    Cliente->>S3: Upload imagem para /uploads/
-    S3->>SQS: Gera evento ObjectCreated
-    SQS->>Lambda: Trigger lambda com evento
-    Lambda->>Rekognition: IndexFaces
-    Lambda->>DynamoDB: Atualiza metadata
-    Lambda->>DynamoDB: Atualiza faces no álbum
+```bash
+npx vitest run app/handlers/image-extract-face.test.ts
+npx vitest run -t "parses collectionId"
 ```
 
-### 2. Busca por Faces Similares
+> **Build antes do deploy/run:** os handlers do `serverless.yml` apontam para `build/handlers/...`, então um `npm run build` é necessário antes de rodar localmente ou deployar.
 
-```mermaid
-sequenceDiagram
-    participant Cliente
-    participant API as API Gateway
-    participant Lambda as FindSimilarFaces
-    participant Rekognition
-    participant DynamoDB
+---
 
-    Cliente->>API: POST /search-faces
-    API->>Lambda: Invoca lambda
-    Lambda->>Rekognition: SearchFacesByImage
-    Lambda->>DynamoDB: Busca metadata das faces
-    Lambda->>Cliente: Retorna resultados
-```
+## Configuração de ambiente
+
+| Variável | Uso |
+|---|---|
+| `ADMIN_API_KEY` | Segredo que protege o provisionamento (`POST /tenants`) |
+| `DISCORD_WEBHOOK_URL` | Destino das mensagens de DLQ (`FailureNotification`) |
+| `AWS_REGION_DEFAULT` | Região (default `us-east-1`) |
+
+As URLs de fila, nome de tabela e bucket são injetadas pelo `serverless.yml` como variáveis de ambiente por função.
