@@ -1,5 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import {
+	AlbumFaceParam,
 	AlbumFacesResponse,
 	AlbumIdParam,
 	AlbumMetadataResponse,
@@ -155,6 +156,49 @@ export const listAlbumFacesRoute = createRoute({
 		},
 		404: {
 			description: "Album not found",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+		500: {
+			description: "Internal Server Error",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+	},
+});
+
+export const deleteAlbumFaceRoute = createRoute({
+	tags: ["Albums"],
+	path: "/albums/{externalClientAlbumId}/faces/{faceId}",
+	method: "delete",
+	request: {
+		params: AlbumFaceParam,
+	},
+	responses: {
+		200: {
+			description: "Face removida (Rekognition + S3 + DynamoDB)",
+			content: {
+				"application/json": {
+					schema: SuccessResponse,
+				},
+			},
+		},
+		401: {
+			description: "API key ausente ou inválida",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+		404: {
+			description: "Álbum ou face não encontrados",
 			content: {
 				"application/json": {
 					schema: ErrorResponse,

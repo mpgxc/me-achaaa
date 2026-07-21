@@ -8,6 +8,7 @@ import {
 import {
 	CreateCollectionCommand,
 	DeleteCollectionCommand,
+	DeleteFacesCommand,
 	ListFacesCommand,
 } from "@aws-sdk/client-rekognition";
 import {
@@ -170,6 +171,44 @@ export class PictureAlbumManagementService {
 		} while (nextToken);
 
 		return dynamoItems.filter((f) => rekognitionFaceIds.has(f.FaceId));
+	}
+
+	/**
+	 * Remove uma face individual — direito ao esquecimento (LGPD): apaga da
+	 * coleção do Rekognition, o recorte no S3 e o registro FACE# no DynamoDB.
+	 * Retorna `false` quando a face não existia na coleção.
+	 */
+	async deleteFace(collectionId: string, faceId: string): Promise<boolean> {
+		const { DeletedFaces } = await this.rekognition.send(
+			new DeleteFacesCommand({
+				CollectionId: collectionId,
+				FaceIds: [faceId],
+			}),
+		);
+
+		if (!DeletedFaces?.includes(faceId)) {
+			return false;
+		}
+
+		await Promise.all([
+			this.s3.send(
+				new DeleteObjectCommand({
+					Bucket: this.s3.bucketName,
+					Key: `uploads/faces/${collectionId}/${faceId}.jpg`,
+				}),
+			),
+			this.dynamo.send(
+				new DeleteItemCommand({
+					TableName: this.dynamo.tableName,
+					Key: marshall({
+						PK: `ALBUM#${collectionId}`,
+						SK: `FACE#${faceId}`,
+					}),
+				}),
+			),
+		]);
+
+		return true;
 	}
 
 	async createRekognitionCollection(

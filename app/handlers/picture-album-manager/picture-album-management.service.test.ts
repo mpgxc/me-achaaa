@@ -155,6 +155,39 @@ describe("PictureAlbumManagementService", () => {
 		});
 	});
 
+	describe("deleteFace", () => {
+		it("deletes from Rekognition, S3 and DynamoDB when the face exists", async () => {
+			mockRekognitionSend.mockResolvedValueOnce({ DeletedFaces: ["face-1"] });
+			mockS3Send.mockResolvedValueOnce({});
+			mockDynamoSend.mockResolvedValueOnce({});
+
+			const result = await service.deleteFace("col-1", "face-1");
+
+			expect(result).toBe(true);
+
+			const reko = mockRekognitionSend.mock.calls[0][0];
+			expect(reko.input.CollectionId).toBe("col-1");
+			expect(reko.input.FaceIds).toEqual(["face-1"]);
+
+			const s3 = mockS3Send.mock.calls[0][0];
+			expect(s3.input.Key).toBe("uploads/faces/col-1/face-1.jpg");
+
+			const dynamo = mockDynamoSend.mock.calls[0][0];
+			expect(dynamo.input.Key.PK.S).toBe("ALBUM#col-1");
+			expect(dynamo.input.Key.SK.S).toBe("FACE#face-1");
+		});
+
+		it("returns false and skips S3/DynamoDB when the face is absent", async () => {
+			mockRekognitionSend.mockResolvedValueOnce({ DeletedFaces: [] });
+
+			const result = await service.deleteFace("col-1", "missing");
+
+			expect(result).toBe(false);
+			expect(mockS3Send).not.toHaveBeenCalled();
+			expect(mockDynamoSend).not.toHaveBeenCalled();
+		});
+	});
+
 	describe("createRekognitionCollection", () => {
 		it("calls Rekognition CreateCollection with the album id", async () => {
 			mockRekognitionSend.mockResolvedValueOnce({});
