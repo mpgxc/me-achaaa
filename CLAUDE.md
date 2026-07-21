@@ -34,8 +34,7 @@ This is an **event-driven pipeline**, not a monolithic API. An upload triggers a
 
 ### Synchronous HTTP surfaces
 
-- **`FindSimilarFaces` / `FindSimilarFacesByFaceId`** (`picture-search.ts`) — raw Lambda-proxy handlers behind `POST /search` and `POST /search/by-face-id`. Require an `x-collection-id` header (validated as a UUID). Note the file comment: this search logic is intended to eventually move into the main NestJS system.
-- **`PictureAlbumManager`** (`picture-album-manager/`) — a **Hono `OpenAPIHono` app** wrapped with `hono/aws-lambda`'s `handle()`, mounted on all `/albums*` routes. This is the only handler using a framework/router; routes are defined declaratively in `picture-album-manager.openapi.ts` (Zod schemas), wired in `picture-album-manager.routes.ts`, and business logic lives in `picture-album-management.service.ts`. It self-serves Swagger UI (`/api/docs`) and Scalar (`/api/docs/scalar`) and starts a local `serve()` when not running inside Lambda (`!process.env.LAMBDA_TASK_ROOT`).
+- **`PictureAlbumManager`** (`picture-album-manager/`) — a single **Hono `OpenAPIHono` app** wrapped with `hono/aws-lambda`'s `handle()`, serving the whole synchronous surface: `/tenants` (provisioning), `/albums*` (album CRUD + upload URLs), and `/search` + `/search/by-face-id` (face search). This is the only handler using a framework/router; routes are declared in `*.openapi.ts` (Zod schemas), wired in `*.routes.ts`, and logic lives in `*.service.ts`. Face search now runs **inside** this authenticated app (`search/`, requires the `x-collection-id` header and tenant ownership) — the old standalone `picture-search.ts` Lambdas were removed. It self-serves Swagger UI (`/api/docs`) and Scalar (`/api/docs/scalar`) and starts a local `serve()` when not running inside Lambda (`!process.env.LAMBDA_TASK_ROOT`).
 
 ### Key conventions & shared code
 
