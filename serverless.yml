@@ -150,28 +150,6 @@ functions:
     environment:
       S3_BUCKET_NAME: !Ref FaceRecognitionBucket
 
-  FindSimilarFaces:
-    handler: build/handlers/picture-search.handler
-    memorySize: 128
-    timeout: 10
-    description: Finds similar faces in the Rekognition collection
-    maximumRetryAttempts: 0
-    events:
-      - httpApi: POST /search
-    environment:
-      REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
-
-  FindSimilarFacesByFaceId:
-    handler: build/handlers/picture-search.handlerByFaceId
-    memorySize: 128
-    timeout: 10
-    description: Finds similar faces by FaceId in the Rekognition collection
-    maximumRetryAttempts: 0
-    events:
-      - httpApi: POST /search/by-face-id
-    environment:
-      REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
-
   PictureAlbumManager:
     handler: build/handlers/picture-album-manager/picture-album-manager.handler.handler
     memorySize: 256
@@ -196,6 +174,12 @@ functions:
           method: GET
       - httpApi:
           path: /albums/{externalClientAlbumId}/upload-url
+          method: POST
+      - httpApi:
+          path: /search
+          method: POST
+      - httpApi:
+          path: /search/by-face-id
           method: POST
     environment:
       DYNAMO_TABLE_NAME: !Ref RekognitionBucketAssetsControll
