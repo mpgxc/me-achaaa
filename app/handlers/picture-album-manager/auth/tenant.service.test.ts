@@ -39,6 +39,41 @@ describe("TenantService", () => {
 			expect(apiKeyPut.input.Item.PK.S.startsWith("APIKEY#")).toBe(true);
 			expect(apiKeyPut.input.Item.TenantId.S).toBe(tenantId);
 		});
+
+		it("stores the webhookUrl when provided", async () => {
+			mockDynamoSend.mockResolvedValue({});
+
+			await service.createTenant({
+				name: "Acme",
+				webhookUrl: "https://hook.test",
+			});
+
+			const tenantPut = mockDynamoSend.mock.calls[0][0];
+			expect(tenantPut.input.Item.WebhookUrl.S).toBe("https://hook.test");
+		});
+	});
+
+	describe("getTenant", () => {
+		it("returns the tenant with its webhookUrl", async () => {
+			mockDynamoSend.mockResolvedValue({
+				Item: marshall({
+					PK: "TENANT#t1",
+					SK: "METADATA",
+					Name: "Acme",
+					WebhookUrl: "https://hook.test",
+				}),
+			});
+
+			expect(await service.getTenant("t1")).toEqual({
+				webhookUrl: "https://hook.test",
+			});
+		});
+
+		it("returns null when the tenant does not exist", async () => {
+			mockDynamoSend.mockResolvedValue({ Item: undefined });
+
+			expect(await service.getTenant("missing")).toBeNull();
+		});
 	});
 
 	describe("resolveTenant", () => {

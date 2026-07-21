@@ -62,10 +62,13 @@ const tenantService = new TenantService();
 tenantManagementRoute.use("/tenants", adminAuth());
 
 tenantManagementRoute.openapi(createTenantRoute, async (ctx) => {
-	const { name } = ctx.req.valid("json");
+	const { name, webhookUrl } = ctx.req.valid("json");
 
 	try {
-		const { tenantId, apiKey } = await tenantService.createTenant({ name });
+		const { tenantId, apiKey } = await tenantService.createTenant({
+			name,
+			webhookUrl,
+		});
 
 		return ctx.json({ tenantId, apiKey, name }, 201);
 	} catch (error) {

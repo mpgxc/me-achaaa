@@ -1,9 +1,26 @@
 import type { Face, FaceDetail } from "@aws-sdk/client-rekognition";
 import { describe, expect, it } from "vitest";
 import {
+	buildProcessedNotification,
 	extractExternalImageId,
 	extractFacePicturePolicy,
 } from "./image-extract-face";
+
+describe("buildProcessedNotification", () => {
+	it("builds the image.processed event from the key and faceIds", () => {
+		const event = buildProcessedNotification(
+			"uploads/incoming/col-1/img-9.jpg",
+			["f1", "f2"],
+		);
+
+		expect(event).toEqual({
+			type: "image.processed",
+			collectionId: "col-1",
+			imageId: "img-9",
+			faceIds: ["f1", "f2"],
+		});
+	});
+});
 
 describe("extractExternalImageId", () => {
 	it("parses collectionId and imageId from a .jpg key", () => {
