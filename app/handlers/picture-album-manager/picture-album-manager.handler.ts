@@ -8,9 +8,11 @@ import { prettyJSON } from "hono/pretty-json";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 import { trimTrailingSlash } from "hono/trailing-slash";
+import { tenantManagementRoute } from "./auth/tenant.routes";
+import type { AppEnv } from "./auth/types";
 import { pictureAlbumManagementRoute } from "./picture-album-manager.routes";
 
-const app = new OpenAPIHono({
+const app = new OpenAPIHono<AppEnv>({
 	strict: true,
 });
 
@@ -20,6 +22,14 @@ app.use(secureHeaders());
 app.use(trimTrailingSlash());
 app.use("*", requestId());
 
+app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
+	type: "http",
+	scheme: "bearer",
+	description: "API key do tenant: Authorization: Bearer <key>",
+});
+
+// Provisionamento (protegido por ADMIN_API_KEY) e gestão de álbuns (por API key).
+app.route("/", tenantManagementRoute);
 app.route("/", pictureAlbumManagementRoute);
 
 app.doc("/api/reference", {

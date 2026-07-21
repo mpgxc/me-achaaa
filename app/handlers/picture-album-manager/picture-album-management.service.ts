@@ -93,6 +93,36 @@ export class PictureAlbumManagementService {
 		return Content;
 	}
 
+	/**
+	 * Busca o álbum retornando o tenant dono (`tenantId`) junto do conteúdo,
+	 * para que as rotas façam o escopo por tenant numa única leitura.
+	 * `tenantId` é `null` em álbuns legados criados antes do multi-tenancy.
+	 */
+	async getAlbum(externalClientAlbumId: string): Promise<{
+		tenantId: string | null;
+		content: AlbumMetadataContent;
+	} | null> {
+		const { Item } = await this.dynamo.send(
+			new GetItemCommand({
+				TableName: this.dynamo.tableName,
+				Key: marshall({
+					PK: `ALBUM#${externalClientAlbumId}`,
+					SK: "METADATA",
+				}),
+			}),
+		);
+
+		if (!Item) {
+			return null;
+		}
+
+		const record = unmarshall(Item) as DynamoAlbumMetadataItem & {
+			TenantId?: string;
+		};
+
+		return { tenantId: record.TenantId ?? null, content: record.Content };
+	}
+
 	async listAlbumFaces(
 		externalClientAlbumId: string,
 	): Promise<AlbumFaceRecord[]> {
@@ -168,10 +198,11 @@ export class PictureAlbumManagementService {
 		await this.dynamo.send(command);
 	}
 
-	async createAlbumMetadata(externalClientAlbumId: string) {
+	async createAlbumMetadata(externalClientAlbumId: string, tenantId?: string) {
 		const Item = marshall({
 			PK: `ALBUM#${externalClientAlbumId}`,
 			SK: "METADATA",
+			...(tenantId ? { TenantId: tenantId } : {}),
 			Content: {
 				externalClientAlbumId,
 				faces: [],

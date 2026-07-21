@@ -180,6 +180,9 @@ functions:
     maximumRetryAttempts: 0
     events:
       - httpApi:
+          path: /tenants
+          method: POST
+      - httpApi:
           path: /albums
           method: POST
       - httpApi:
@@ -198,6 +201,7 @@ functions:
       DYNAMO_TABLE_NAME: !Ref RekognitionBucketAssetsControll
       S3_BUCKET_NAME: !Ref FaceRecognitionBucket
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
+      ADMIN_API_KEY: ${env:ADMIN_API_KEY, ''}
 
   FailureNotification:
     handler: build/handlers/failure-notification.handler
