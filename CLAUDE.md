@@ -51,6 +51,8 @@ This is an **event-driven pipeline**, not a monolithic API. An upload triggers a
 - **S3 key layout:** `uploads/incoming/`, `uploads/faces/`, `uploads/thumbnails/`, each namespaced by `{collectionId}`.
 - **SQS batch handlers** return `{ batchItemFailures }` (`ReportBatchItemFailures`) so only failed messages are retried; per-message errors are caught and pushed to that array rather than thrown.
 - **Batched writes:** DynamoDB writes use `TransactWriteItemsCommand` chunked via `splitBatches` (`app/helpers/commons.ts`); the per-transaction cap is 50 items.
+- **Structured logging:** use `app/logger.ts` (`logger.info/warn/error(msg, meta)`) — a zero-dependency JSON logger to stdout (CloudWatch Logs Insights queryable). `pino` is a dependency but is **not** packaged (`package.yml` only bundles `zod`/`sharp` from `node_modules`), so do **not** `import pino` in a handler — it would fail at runtime with "module not found".
+- **SQS reliability:** processing queues use `maxReceiveCount: 3` (retry before DLQ). Never swallow an error into a "no-op" result inside an SQS handler — let it throw so the per-message `catch` pushes to `batchItemFailures` and the message is retried (see `picture-index-processing.ts`: a swallowed `IndexFaces` error used to ACK as "no faces" → silent data loss).
 - **`sharp` Lambda layer:** `sharp` is deployed as a native layer (`layers/sharp/`), attached only to `ImageExtractFace` and `ImageThumbnailGenerator`. If you add another Lambda that needs `sharp`, attach the layer in `serverless.yml`.
 
 ## Testing
