@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - homolog
+
+jobs:
+  quality:
+    name: typecheck · lint · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # Full install (lifecycle scripts enabled) so native bindings — sharp and
+      # vitest 4's rolldown binary — are placed correctly, mirroring deploy.yml.
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --build tsconfig.json
+      - name: Lint
+        run: npx biome check
+      - name: Test
+        run: npx vitest run

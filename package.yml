@@ -26,4 +26,4 @@ package:
     - "!*.editorconfig"
     - "!*.vscode/**"
     - "!*.github"
-    - "dist/app/handlers/**"
+    - "build/**"

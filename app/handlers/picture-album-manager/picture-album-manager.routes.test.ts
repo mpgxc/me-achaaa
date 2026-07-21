@@ -12,18 +12,18 @@ const mockGetAlbumMetadata = vi.fn();
 const mockListAlbumFaces = vi.fn();
 
 vi.mock("./picture-album-management.service", () => ({
-	PictureAlbumManagementService: vi.fn().mockImplementation(() => ({
-		checkAlbumExists: mockCheckAlbumExists,
-		createRekognitionCollection: mockCreateRekognitionCollection,
-		createAlbumMetadata: mockCreateAlbumMetadata,
-		createBucketAlbum: mockCreateBucketAlbum,
-		deleteRekognitionCollection: mockDeleteRekognitionCollection,
-		deleteBucketAlbumPlaceholder: mockDeleteBucketAlbumPlaceholder,
-		deleteBucketAlbum: mockDeleteBucketAlbum,
-		deleteAlbumMetadata: mockDeleteAlbumMetadata,
-		getAlbumMetadata: mockGetAlbumMetadata,
-		listAlbumFaces: mockListAlbumFaces,
-	})),
+	PictureAlbumManagementService: class {
+		checkAlbumExists = mockCheckAlbumExists;
+		createRekognitionCollection = mockCreateRekognitionCollection;
+		createAlbumMetadata = mockCreateAlbumMetadata;
+		createBucketAlbum = mockCreateBucketAlbum;
+		deleteRekognitionCollection = mockDeleteRekognitionCollection;
+		deleteBucketAlbumPlaceholder = mockDeleteBucketAlbumPlaceholder;
+		deleteBucketAlbum = mockDeleteBucketAlbum;
+		deleteAlbumMetadata = mockDeleteAlbumMetadata;
+		getAlbumMetadata = mockGetAlbumMetadata;
+		listAlbumFaces = mockListAlbumFaces;
+	},
 }));
 
 const mockGetSignedUrl = vi

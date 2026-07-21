@@ -42,6 +42,7 @@ _meta
 .serverless
 
 build/
+*.tsbuildinfo
 
 *.jpg
 *.png
