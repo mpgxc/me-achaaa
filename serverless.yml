@@ -70,6 +70,7 @@ provider:
         - !GetAtt FaceRecognitionQueue.Arn
         - !GetAtt ImageExtractFaceQueue.Arn
         - !GetAtt ImageGenerateThumbnailQueue.Arn
+        - !GetAtt NotificationQueue.Arn
 
 custom:
   defaultStage: dev
@@ -133,6 +134,7 @@ functions:
     environment:
       DYNAMO_TABLE_NAME: !Ref RekognitionBucketAssetsControll
       S3_BUCKET_NAME: !Ref FaceRecognitionBucket
+      NOTIFICATION_QUEUE: !Ref NotificationQueue
 
   ImageThumbnailGenerator:
     handler: build/handlers/image-thumbnail-generator.handler
@@ -207,8 +209,26 @@ functions:
       - sqs:
           arn: !GetAtt ImageGenerateThumbnailQueueDLQ.Arn
           batchSize: 1
+      - sqs:
+          arn: !GetAtt NotificationQueueDLQ.Arn
+          batchSize: 1
     environment:
       DISCORD_WEBHOOK_URL: ${env:DISCORD_WEBHOOK_URL, ''}
+
+  NotificationDispatcher:
+    handler: build/handlers/notification-dispatcher.handler
+    memorySize: 128
+    timeout: 30
+    description: Delivers processing-completion notifications to the tenant webhook
+    maximumRetryAttempts: 0
+    events:
+      - sqs:
+          arn: !GetAtt NotificationQueue.Arn
+          batchSize: 5
+          maximumBatchingWindow: 30
+          functionResponseType: ReportBatchItemFailures
+    environment:
+      DYNAMO_TABLE_NAME: !Ref RekognitionBucketAssetsControll
 
 resources:
   Resources:
@@ -290,6 +310,22 @@ resources:
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-generate-thumbnail-queue-dlq
         VisibilityTimeout: 240
+
+    NotificationQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-notification-queue
+        VisibilityTimeout: 60
+        ReceiveMessageWaitTimeSeconds: 20
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt NotificationQueueDLQ.Arn
+          maxReceiveCount: 3
+
+    NotificationQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-notification-queue-dlq
+        VisibilityTimeout: 60
 
     FaceRecognitionQueuePolicy:
       Type: AWS::SQS::QueuePolicy

@@ -95,6 +95,7 @@ export class SqsSingleton extends SQSClient {
 		return {
 			THUMBNAIL: process.env.IMAGE_PROCESSING_THUMBNAIL,
 			FACE_EXTRACT: process.env.IMAGE_PROCESSING_FACE_EXTRACT,
+			NOTIFICATION: process.env.NOTIFICATION_QUEUE,
 		};
 	}
 }

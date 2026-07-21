@@ -28,9 +28,10 @@ This is an **event-driven pipeline**, not a monolithic API. An upload triggers a
 1. **Upload** — client gets a presigned S3 PUT URL (via `PictureAlbumManager`'s `/albums/{id}/upload-url` route) and uploads to `uploads/incoming/{collectionId}/{imageId}.jpg`.
 2. **S3 event → SQS** — `s3:ObjectCreated` on `uploads/incoming/*.jp(e)g` pushes to `FaceRecognitionQueue`.
 3. **`DetectAndIndexFaces`** (`picture-index-processing.ts`) — consumes the queue in batches, calls Rekognition `IndexFaces`, writes `IMAGE#` metadata to DynamoDB, then **fans out** to two more queues: `ImageExtractFaceQueue` and `ImageGenerateThumbnailQueue`.
-4. **`ImageExtractFace`** (`image-extract-face.ts`) — crops each indexed face with `sharp` (subject to `extractFacePicturePolicy`: confidence ≥ 99, sharpness & brightness ≥ 60), saves to `uploads/faces/{collectionId}/{faceId}.jpg`, and writes `FACE#` records to DynamoDB.
+4. **`ImageExtractFace`** (`image-extract-face.ts`) — crops each indexed face with `sharp` (subject to `extractFacePicturePolicy`: confidence ≥ 99, sharpness & brightness ≥ 60), saves to `uploads/faces/{collectionId}/{faceId}.jpg`, writes `FACE#` records to DynamoDB, and emits an `image.processed` event to `NotificationQueue`.
 5. **`ImageThumbnailGenerator`** (`image-thumbnail-generator.ts`) — resizes + tiles a watermark (`assets/watermark.png`), saves to `uploads/thumbnails/...`.
-6. **`FailureNotification`** (`failure-notification.ts`) — subscribes to all three DLQs and posts the failed message to a Discord webhook (`DISCORD_WEBHOOK_URL`).
+6. **`NotificationDispatcher`** (`notification-dispatcher.ts`) — consumes `NotificationQueue`, resolves the tenant's `webhookUrl` (collection → album → `TenantId` → tenant), and POSTs the completion event to it (SQS retry + DLQ for reliable delivery). The webhook URL is set on the tenant at provisioning (`POST /tenants` `webhookUrl`).
+7. **`FailureNotification`** (`failure-notification.ts`) — subscribes to all DLQs (including `NotificationQueueDLQ`) and posts the failed message to a Discord webhook (`DISCORD_WEBHOOK_URL`).
 
 ### Synchronous HTTP surfaces
 

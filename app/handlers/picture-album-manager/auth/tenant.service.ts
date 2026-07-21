@@ -16,8 +16,10 @@ export class TenantService {
 
 	async createTenant({
 		name,
+		webhookUrl,
 	}: {
 		name: string;
+		webhookUrl?: string;
 	}): Promise<{ tenantId: string; apiKey: string }> {
 		const tenantId = randomUUID();
 
@@ -28,6 +30,7 @@ export class TenantService {
 					PK: `TENANT#${tenantId}`,
 					SK: "METADATA",
 					Name: name,
+					...(webhookUrl ? { WebhookUrl: webhookUrl } : {}),
 					CreatedAt: new Date().toISOString(),
 				}),
 				ConditionExpression: "attribute_not_exists(PK)",
@@ -37,6 +40,27 @@ export class TenantService {
 		const apiKey = await this.issueApiKey(tenantId, { name: "default" });
 
 		return { tenantId, apiKey };
+	}
+
+	/**
+	 * Busca o registro de um tenant. Usado pelo NotificationDispatcher para
+	 * resolver o `webhookUrl` de destino da notificação de conclusão.
+	 */
+	async getTenant(tenantId: string): Promise<{ webhookUrl?: string } | null> {
+		const { Item } = await this.dynamo.send(
+			new GetItemCommand({
+				TableName: this.dynamo.tableName,
+				Key: marshall({ PK: `TENANT#${tenantId}`, SK: "METADATA" }),
+			}),
+		);
+
+		if (!Item) {
+			return null;
+		}
+
+		const record = unmarshall(Item) as { WebhookUrl?: string };
+
+		return { webhookUrl: record.WebhookUrl };
 	}
 
 	async issueApiKey(

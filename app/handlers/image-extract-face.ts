@@ -8,17 +8,65 @@ import type {
 	FaceDetail,
 } from "@aws-sdk/client-rekognition";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { SendMessageCommand } from "@aws-sdk/client-sqs";
 import { marshall } from "@aws-sdk/util-dynamodb";
 import type { SQSBatchResponse, SQSEvent } from "aws-lambda";
 import sharp from "sharp";
 import { extractExternalImageId, splitBatches } from "../helpers/commons";
-import { DynamoSingleton, S3Singleton } from "../providers";
+import { DynamoSingleton, S3Singleton, SqsSingleton } from "../providers";
 import type { ImageProcessingEvent } from "./types";
 
 const TRANSACTIONS_LIMIT_PER_BATCH = 50;
 
 const dynamodb = DynamoSingleton.getInstance();
 const s3Client = S3Singleton.getInstance();
+const sqsClient = SqsSingleton.getInstance();
+
+/**
+ * Monta o evento de conclusão emitido quando as faces de uma imagem foram
+ * extraídas. Consumido pelo NotificationDispatcher para chamar o webhook.
+ */
+export const buildProcessedNotification = (key: string, faceIds: string[]) => {
+	const { CollectionId, ExternalImageId } = extractExternalImageId(key);
+
+	return {
+		type: "image.processed" as const,
+		collectionId: CollectionId,
+		imageId: ExternalImageId,
+		faceIds,
+	};
+};
+
+const emitProcessedNotifications = async (
+	processed: Array<{ key: string; faceIds: string[] }>,
+) => {
+	const queueUrl = sqsClient.queueUrl.NOTIFICATION;
+
+	if (!queueUrl) {
+		return; // notificações desabilitadas se a fila não estiver configurada
+	}
+
+	await Promise.all(
+		processed.map((item) =>
+			sqsClient
+				.send(
+					new SendMessageCommand({
+						QueueUrl: queueUrl,
+						MessageBody: JSON.stringify(
+							buildProcessedNotification(item.key, item.faceIds),
+						),
+					}),
+				)
+				.catch((error) => {
+					console.error(
+						`EmitProcessedNotifications: falha ao enfileirar notificação para ${item.key}: ${
+							error instanceof Error ? error.message : JSON.stringify(error)
+						}`,
+					);
+				}),
+		),
+	);
+};
 
 const getImageFromBucket = async (Key: string): Promise<Uint8Array | null> => {
 	const command = new GetObjectCommand({
@@ -182,6 +230,7 @@ export const handler = async ({
 
 const processImagesHandler = async (images: ImageProcessingEvent[]) => {
 	const faces: ExtractFacePictureOutput[] = [];
+	const processed: Array<{ key: string; faceIds: string[] }> = [];
 
 	for (const content of images) {
 		try {
@@ -192,6 +241,12 @@ const processImagesHandler = async (images: ImageProcessingEvent[]) => {
 			}
 
 			faces.push(filteredFaces);
+			processed.push({
+				key: content.key,
+				faceIds: filteredFaces.faces
+					.map(({ FaceId }) => FaceId)
+					.filter((id): id is string => Boolean(id)),
+			});
 		} catch (error) {
 			console.error(
 				`ProcessImagesHandler: Error processing image ${content.key}: ${
@@ -204,6 +259,7 @@ const processImagesHandler = async (images: ImageProcessingEvent[]) => {
 	}
 
 	await registerFacesImageMetadata(faces);
+	await emitProcessedNotifications(processed);
 };
 
 const registerFacesImageMetadata = async (
