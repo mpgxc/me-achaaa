@@ -271,7 +271,7 @@ resources:
         ReceiveMessageWaitTimeSeconds: 20
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt ImageExtractFaceQueueDLQ.Arn
-          maxReceiveCount: 1
+          maxReceiveCount: 3
 
     ImageExtractFaceQueueDLQ:
       Type: AWS::SQS::Queue
@@ -287,7 +287,7 @@ resources:
         ReceiveMessageWaitTimeSeconds: 20
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt FaceRecognitionQueueDLQ.Arn
-          maxReceiveCount: 1
+          maxReceiveCount: 3
 
     FaceRecognitionQueueDLQ:
       Type: AWS::SQS::Queue
@@ -303,7 +303,7 @@ resources:
         ReceiveMessageWaitTimeSeconds: 20
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt ImageGenerateThumbnailQueueDLQ.Arn
-          maxReceiveCount: 1
+          maxReceiveCount: 3
 
     ImageGenerateThumbnailQueueDLQ:
       Type: AWS::SQS::Queue

@@ -16,6 +16,7 @@ import type {
 	SQSEvent,
 } from "aws-lambda";
 import { extractExternalImageId, splitBatches } from "../helpers/commons";
+import { errorMessage, logger } from "../logger";
 import {
 	DynamoSingleton,
 	RekognitionSingleton,
@@ -37,55 +38,46 @@ const rekognitionEventHandler = async ({
 }: Pick<S3EventRecord["s3"], "bucket" | "object">): Promise<
 	ImageProcessingFacesEvent[]
 > => {
-	try {
-		const { ExternalImageId, CollectionId } = extractExternalImageId(
-			object.key,
-		);
+	const { ExternalImageId, CollectionId } = extractExternalImageId(object.key);
 
-		const command = new IndexFacesCommand({
-			CollectionId,
-			Image: {
-				S3Object: {
-					Bucket: bucket.name,
-					Name: object.key,
-				},
+	const command = new IndexFacesCommand({
+		CollectionId,
+		Image: {
+			S3Object: {
+				Bucket: bucket.name,
+				Name: object.key,
 			},
-			MaxFaces: 5,
-			QualityFilter: "HIGH",
-			ExternalImageId,
-			DetectionAttributes: ["ALL"],
-		});
+		},
+		MaxFaces: 5,
+		QualityFilter: "HIGH",
+		ExternalImageId,
+		DetectionAttributes: ["ALL"],
+	});
 
-		const { FaceRecords } = await rekognition.send(command);
+	// Sem try/catch aqui de propósito: um erro do Rekognition (throttle,
+	// timeout) deve PROPAGAR para o handler marcar a mensagem como falha e o
+	// SQS reprocessá-la. Engolir o erro e retornar [] causava perda silenciosa
+	// (a imagem era confirmada como "sem faces" e nunca reindexada).
+	const { FaceRecords } = await rekognition.send(command);
 
-		if (!FaceRecords || !FaceRecords.length) {
-			console.warn(
-				`Rekognition: No faces were indexed for image ${object.key}`,
-			);
-
-			return [];
-		}
-
-		console.info(
-			`Rekognition: ${FaceRecords?.length} faces indexed for image ${object.key}`,
-		);
-
-		return FaceRecords.flatMap(
-			({ Face, FaceDetail }) =>
-				({
-					Face,
-					FaceDetail,
-				}) as ImageProcessingFacesEvent,
-		);
-	} catch (error) {
-		console.error(
-			`Rekognition: Error processing S3 event: ${
-				error instanceof Error ? error.message : JSON.stringify(error)
-			}`,
-		);
+	if (!FaceRecords || !FaceRecords.length) {
+		logger.warn("Rekognition: nenhuma face indexada", { key: object.key });
 
 		return [];
 	}
+
+	logger.info("Rekognition: faces indexadas", {
+		key: object.key,
+		faces: FaceRecords.length,
+	});
+
+	return FaceRecords.flatMap(
+		({ Face, FaceDetail }) =>
+			({
+				Face,
+				FaceDetail,
+			}) as ImageProcessingFacesEvent,
+	);
 };
 
 export const handler = async ({
@@ -117,7 +109,7 @@ export const handler = async ({
 			});
 
 			if (!faces.length) {
-				console.warn(`Handler: No faces were indexed for image: ${object.key}`);
+				logger.warn("Handler: nenhuma face indexada", { key: object.key });
 			}
 
 			images.push({
@@ -125,11 +117,11 @@ export const handler = async ({
 				faces,
 			});
 		} catch (error) {
-			console.error(
-				`Handler: Error processing S3 event: ${
-					error instanceof Error ? error.message : JSON.stringify(error)
-				}`,
-			);
+			// Falha ao indexar -> reprocessa a mensagem (não perde silenciosamente).
+			logger.error("Handler: erro processando evento S3", {
+				messageId,
+				error: errorMessage(error),
+			});
 
 			batchItemFailures.push({
 				itemIdentifier: messageId,
@@ -138,11 +130,9 @@ export const handler = async ({
 	}
 
 	await registerImageMetadata(images).catch((error) => {
-		console.error(
-			`RegisterImageMetadata: Error registering image metadata: ${
-				error instanceof Error ? error.message : JSON.stringify(error)
-			}`,
-		);
+		logger.error("RegisterImageMetadata: erro ao registrar metadados", {
+			error: errorMessage(error),
+		});
 	});
 
 	if (images.length > 0) {
