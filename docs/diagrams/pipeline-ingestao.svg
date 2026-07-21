@@ -1,0 +1,90 @@
+<svg viewBox="0 0 1000 1080" xmlns="http://www.w3.org/2000/svg" font-family="'Inter', -apple-system, 'Segoe UI', Roboto, system-ui, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="7" refX="7.5" refY="3.5" orient="auto">
+      <path d="M0,0 L8,3.5 L0,7 Z" fill="#a8a29a"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="1080" fill="#ffffff"/>
+
+  <!-- TITLE -->
+  <text x="360" y="40" fill="#8a8a8a" font-size="15" font-weight="600" text-anchor="middle"
+        letter-spacing="0.12em" style="text-transform:uppercase">pipeline de ingestão</text>
+
+  <!-- ARROWS (behind blocks) -->
+  <line x1="360" y1="120" x2="360" y2="176" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="360" y1="242" x2="360" y2="298" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="360" y1="358" x2="360" y2="414" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- fan-out branch 1: index -> extract -->
+  <line x1="360" y1="504" x2="360" y2="560" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- fan-out branch 2: index -> thumbnail (curve into left edge) -->
+  <path d="M 500 470 C 592 480, 600 606, 636 606" fill="none" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- extract -> notification queue -->
+  <line x1="360" y1="650" x2="360" y2="706" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="360" y1="766" x2="360" y2="822" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="360" y1="912" x2="360" y2="968" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ARROW LABELS -->
+  <rect x="368" y="140" width="112" height="15" fill="#ffffff"/>
+  <text x="424" y="151" fill="#8a8a8a" font-size="11" text-anchor="middle">PUT pré-assinado</text>
+  <rect x="368" y="262" width="150" height="15" fill="#ffffff"/>
+  <text x="443" y="273" fill="#8a8a8a" font-size="11" text-anchor="middle">s3:ObjectCreated → SQS</text>
+  <rect x="392" y="524" width="60" height="15" fill="#ffffff"/>
+  <text x="422" y="535" fill="#8a8a8a" font-size="11" text-anchor="middle">fan-out</text>
+  <rect x="368" y="670" width="128" height="15" fill="#ffffff"/>
+  <text x="432" y="681" fill="#8a8a8a" font-size="11" text-anchor="middle">emite image.processed</text>
+
+  <!-- BLOCKS -->
+  <!-- upload (neutral, pill) -->
+  <rect x="240" y="64" width="240" height="56" rx="28" fill="#ffffff"/>
+  <rect x="240" y="64" width="240" height="56" rx="28" fill="#f1efe8" stroke="#d8d4c4" stroke-width="1.25"/>
+  <text x="360" y="98" fill="#4a4a4a" font-size="15" font-weight="500" text-anchor="middle">upload do cliente</text>
+
+  <!-- S3 incoming (neutral) -->
+  <rect x="220" y="178" width="280" height="64" rx="10" fill="#ffffff"/>
+  <rect x="220" y="178" width="280" height="64" rx="10" fill="#f1efe8" stroke="#d8d4c4" stroke-width="1.25"/>
+  <text x="360" y="204" fill="#4a4a4a" font-size="15" font-weight="500" text-anchor="middle">S3 · uploads/incoming</text>
+  <text x="360" y="224" fill="#8a8577" font-size="11" font-weight="500" text-anchor="middle">bucket de entrada</text>
+
+  <!-- FaceRecognitionQueue (neutral) -->
+  <rect x="240" y="300" width="240" height="58" rx="10" fill="#ffffff"/>
+  <rect x="240" y="300" width="240" height="58" rx="10" fill="#f1efe8" stroke="#d8d4c4" stroke-width="1.25"/>
+  <text x="360" y="325" fill="#4a4a4a" font-size="15" font-weight="500" text-anchor="middle">FaceRecognitionQueue</text>
+  <text x="360" y="344" fill="#8a8577" font-size="11" font-weight="500" text-anchor="middle">fila SQS</text>
+
+  <!-- DetectAndIndexFaces (compute) -->
+  <rect x="220" y="414" width="280" height="90" rx="10" fill="#ffffff"/>
+  <rect x="220" y="414" width="280" height="90" rx="10" fill="#eeedfe" stroke="#b9b5e8" stroke-width="1.25"/>
+  <text x="360" y="454" fill="#3a3560" font-size="15" font-weight="500" text-anchor="middle">DetectAndIndexFaces</text>
+  <text x="360" y="476" fill="#6a63b0" font-size="11" font-weight="500" text-anchor="middle">IndexFaces · grava IMAGE#</text>
+
+  <!-- ImageExtractFace (compute) -->
+  <rect x="220" y="560" width="280" height="90" rx="10" fill="#ffffff"/>
+  <rect x="220" y="560" width="280" height="90" rx="10" fill="#eeedfe" stroke="#b9b5e8" stroke-width="1.25"/>
+  <text x="360" y="600" fill="#3a3560" font-size="15" font-weight="500" text-anchor="middle">ImageExtractFace</text>
+  <text x="360" y="622" fill="#6a63b0" font-size="11" font-weight="500" text-anchor="middle">recorta faces · grava FACE#</text>
+
+  <!-- ImageThumbnailGenerator (compute, branch leaf) -->
+  <rect x="640" y="560" width="280" height="90" rx="10" fill="#ffffff"/>
+  <rect x="640" y="560" width="280" height="90" rx="10" fill="#eeedfe" stroke="#b9b5e8" stroke-width="1.25"/>
+  <text x="780" y="600" fill="#3a3560" font-size="15" font-weight="500" text-anchor="middle">ImageThumbnailGenerator</text>
+  <text x="780" y="622" fill="#6a63b0" font-size="11" font-weight="500" text-anchor="middle">resize + marca d'água → thumbs</text>
+
+  <!-- NotificationQueue (neutral) -->
+  <rect x="240" y="706" width="240" height="58" rx="10" fill="#ffffff"/>
+  <rect x="240" y="706" width="240" height="58" rx="10" fill="#f1efe8" stroke="#d8d4c4" stroke-width="1.25"/>
+  <text x="360" y="731" fill="#4a4a4a" font-size="15" font-weight="500" text-anchor="middle">NotificationQueue</text>
+  <text x="360" y="750" fill="#8a8577" font-size="11" font-weight="500" text-anchor="middle">fila SQS (retry + DLQ)</text>
+
+  <!-- NotificationDispatcher (compute) -->
+  <rect x="220" y="822" width="280" height="90" rx="10" fill="#ffffff"/>
+  <rect x="220" y="822" width="280" height="90" rx="10" fill="#eeedfe" stroke="#b9b5e8" stroke-width="1.25"/>
+  <text x="360" y="862" fill="#3a3560" font-size="15" font-weight="500" text-anchor="middle">NotificationDispatcher</text>
+  <text x="360" y="884" fill="#6a63b0" font-size="11" font-weight="500" text-anchor="middle">resolve webhook do tenant</text>
+
+  <!-- webhook (outcome, pill) -->
+  <rect x="240" y="968" width="240" height="56" rx="28" fill="#ffffff"/>
+  <rect x="240" y="968" width="240" height="56" rx="28" fill="#e7f1fb" stroke="#a8c8e8" stroke-width="1.25"/>
+  <text x="360" y="1002" fill="#2a5580" font-size="15" font-weight="500" text-anchor="middle">webhook do tenant</text>
+
+</svg>

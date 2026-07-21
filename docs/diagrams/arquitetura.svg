@@ -1,0 +1,75 @@
+<svg viewBox="0 0 1000 620" xmlns="http://www.w3.org/2000/svg" font-family="'Inter', -apple-system, 'Segoe UI', Roboto, system-ui, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="7" refX="7.5" refY="3.5" orient="auto">
+      <path d="M0,0 L8,3.5 L0,7 Z" fill="#a8a29a"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="620" fill="#ffffff"/>
+
+  <!-- TITLE -->
+  <text x="500" y="46" fill="#8a8a8a" font-size="15" font-weight="600" text-anchor="middle"
+        letter-spacing="0.12em" style="text-transform:uppercase">arquitetura — face search engine</text>
+
+  <!-- BOUNDARY: dados & IA -->
+  <rect x="86" y="404" width="828" height="150" rx="12" fill="none" stroke="#3a6ea8" stroke-width="1.25" stroke-dasharray="6,5"/>
+  <rect x="104" y="396" width="150" height="16" fill="#ffffff"/>
+  <text x="108" y="408" fill="#3a6ea8" font-size="11" font-weight="600">AWS · DADOS &amp; IA</text>
+
+  <!-- ARROWS (behind blocks) -->
+  <!-- cliente -> API -->
+  <line x1="470" y1="134" x2="300" y2="204" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- cliente -> pipeline -->
+  <line x1="530" y1="134" x2="700" y2="204" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- API -> dados -->
+  <line x1="270" y1="302" x2="270" y2="402" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- pipeline -> dados -->
+  <line x1="730" y1="302" x2="730" y2="402" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ARROW LABELS -->
+  <rect x="336" y="150" width="92" height="15" fill="#ffffff"/>
+  <text x="382" y="161" fill="#8a8a8a" font-size="11" text-anchor="middle">REST · API key</text>
+  <rect x="576" y="150" width="74" height="15" fill="#ffffff"/>
+  <text x="613" y="161" fill="#8a8a8a" font-size="11" text-anchor="middle">upload S3</text>
+  <rect x="214" y="344" width="86" height="15" fill="#ffffff"/>
+  <text x="257" y="355" fill="#8a8a8a" font-size="11" text-anchor="middle">lê / escreve</text>
+  <rect x="676" y="344" width="86" height="15" fill="#ffffff"/>
+  <text x="719" y="355" fill="#8a8a8a" font-size="11" text-anchor="middle">lê / escreve</text>
+
+  <!-- BLOCKS -->
+  <!-- cliente (neutral, pill) -->
+  <rect x="380" y="78" width="240" height="56" rx="28" fill="#ffffff"/>
+  <rect x="380" y="78" width="240" height="56" rx="28" fill="#f1efe8" stroke="#d8d4c4" stroke-width="1.25"/>
+  <text x="500" y="112" fill="#4a4a4a" font-size="15" font-weight="500" text-anchor="middle">cliente</text>
+
+  <!-- API síncrona (compute) -->
+  <rect x="110" y="206" width="320" height="96" rx="10" fill="#ffffff"/>
+  <rect x="110" y="206" width="320" height="96" rx="10" fill="#eeedfe" stroke="#b9b5e8" stroke-width="1.25"/>
+  <text x="270" y="248" fill="#3a3560" font-size="15" font-weight="500" text-anchor="middle">API síncrona (Hono)</text>
+  <text x="270" y="270" fill="#6a63b0" font-size="11" font-weight="500" text-anchor="middle">tenants · álbuns · busca — autenticada</text>
+
+  <!-- Pipeline assíncrono (compute) -->
+  <rect x="570" y="206" width="320" height="96" rx="10" fill="#ffffff"/>
+  <rect x="570" y="206" width="320" height="96" rx="10" fill="#eeedfe" stroke="#b9b5e8" stroke-width="1.25"/>
+  <text x="730" y="248" fill="#3a3560" font-size="15" font-weight="500" text-anchor="middle">pipeline assíncrono</text>
+  <text x="730" y="270" fill="#6a63b0" font-size="11" font-weight="500" text-anchor="middle">S3 → SQS → Lambdas (fan-out)</text>
+
+  <!-- DynamoDB (neutral) -->
+  <rect x="110" y="426" width="230" height="104" rx="10" fill="#ffffff"/>
+  <rect x="110" y="426" width="230" height="104" rx="10" fill="#f1efe8" stroke="#d8d4c4" stroke-width="1.25"/>
+  <text x="225" y="472" fill="#4a4a4a" font-size="15" font-weight="500" text-anchor="middle">DynamoDB</text>
+  <text x="225" y="494" fill="#8a8577" font-size="11" font-weight="500" text-anchor="middle">single-table PK/SK</text>
+
+  <!-- S3 (neutral) -->
+  <rect x="372" y="426" width="206" height="104" rx="10" fill="#ffffff"/>
+  <rect x="372" y="426" width="206" height="104" rx="10" fill="#f1efe8" stroke="#d8d4c4" stroke-width="1.25"/>
+  <text x="475" y="472" fill="#4a4a4a" font-size="15" font-weight="500" text-anchor="middle">S3</text>
+  <text x="475" y="494" fill="#8a8577" font-size="11" font-weight="500" text-anchor="middle">imagens · recortes · thumbs</text>
+
+  <!-- Rekognition (gate / IA) -->
+  <rect x="610" y="426" width="280" height="104" rx="10" fill="#ffffff"/>
+  <rect x="610" y="426" width="280" height="104" rx="10" fill="#e1f4ee" stroke="#9dd3c2" stroke-width="1.25"/>
+  <text x="750" y="472" fill="#1f6a56" font-size="15" font-weight="500" text-anchor="middle">Rekognition</text>
+  <text x="750" y="494" fill="#2f8a72" font-size="11" font-weight="500" text-anchor="middle">index · detect · search</text>
+
+</svg>
