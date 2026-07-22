@@ -354,6 +354,10 @@ resources:
       Properties:
         TableName: ${self:service}-${self:provider.stage}-rekognition-bucket-assets-controll
         BillingMode: PAY_PER_REQUEST
+        # Expira automaticamente itens de cache de busca (SEARCHCACHE#) via ExpiresAt
+        TimeToLiveSpecification:
+          AttributeName: ExpiresAt
+          Enabled: true
         AttributeDefinitions:
           - AttributeName: PK
             AttributeType: S

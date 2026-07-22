@@ -20,6 +20,17 @@ vi.mock("./picture-search.service", () => ({
 	},
 }));
 
+const mockCacheGet = vi.fn();
+const mockCachePut = vi.fn();
+
+vi.mock("./search-cache.service", () => ({
+	SearchCacheService: class {
+		get = mockCacheGet;
+		put = mockCachePut;
+	},
+	hashImage: () => "test-hash",
+}));
+
 const mockResolveTenant = vi.fn();
 
 vi.mock("../auth/tenant.service", () => ({
@@ -49,6 +60,8 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	mockResolveTenant.mockResolvedValue({ id: TENANT_ID });
 	mockGetAlbum.mockResolvedValue({ tenantId: TENANT_ID, content: {} });
+	mockCacheGet.mockResolvedValue(null); // default: cache miss
+	mockCachePut.mockResolvedValue(undefined);
 });
 
 describe("POST /search", () => {
@@ -131,6 +144,39 @@ describe("POST /search", () => {
 			VALID_UUID,
 			expect.any(Buffer),
 		);
+	});
+
+	it("serves from cache without calling Rekognition on a hit", async () => {
+		mockCacheGet.mockResolvedValue(["img-cached"]);
+
+		const res = await pictureSearchRoute.request("/search", {
+			method: "POST",
+			headers,
+			body: JSON.stringify({ image: IMAGE_B64 }),
+		});
+
+		expect(res.status).toBe(200);
+		expect((await res.json()).images).toEqual(["img-cached"]);
+		// Cache-hit não paga Rekognition: nem DetectFaces nem SearchFacesByImage.
+		expect(mockCountFaces).not.toHaveBeenCalled();
+		expect(mockSearchByImage).not.toHaveBeenCalled();
+	});
+
+	it("caches the result on a miss so the next identical search is free", async () => {
+		mockCacheGet.mockResolvedValue(null);
+		mockCountFaces.mockResolvedValue(1);
+		mockSearchByImage.mockResolvedValue(["img-9"]);
+
+		const res = await pictureSearchRoute.request("/search", {
+			method: "POST",
+			headers,
+			body: JSON.stringify({ image: IMAGE_B64 }),
+		});
+
+		expect(res.status).toBe(200);
+		expect(mockCachePut).toHaveBeenCalledWith(VALID_UUID, "test-hash", [
+			"img-9",
+		]);
 	});
 });
 
