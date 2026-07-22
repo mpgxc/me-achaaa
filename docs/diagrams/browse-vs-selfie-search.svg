@@ -1,0 +1,100 @@
+<svg viewBox="0 0 1040 820" xmlns="http://www.w3.org/2000/svg" font-family="'Inter', -apple-system, 'Segoe UI', Roboto, system-ui, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="7" refX="7.5" refY="3.5" orient="auto">
+      <path d="M0,0 L8,3.5 L0,7 Z" fill="#a8a29a"/>
+    </marker>
+    <marker id="arrow-dash" markerWidth="9" markerHeight="7" refX="7.5" refY="3.5" orient="auto">
+      <path d="M0,0 L8,3.5 L0,7 Z" fill="#7a7a82"/>
+    </marker>
+  </defs>
+
+  <rect width="1040" height="820" fill="#ffffff"/>
+
+  <!-- TITLE -->
+  <text x="520" y="48" fill="#8a8a8a" font-size="15" font-weight="600" text-anchor="middle"
+        letter-spacing="0.12em" style="text-transform:uppercase">browse by person × search by selfie</text>
+
+  <!-- BOUNDARIES (behind arrows/blocks) -->
+  <!-- cache / CDN zone (blue) -->
+  <rect x="140" y="205" width="760" height="158" rx="12" fill="none" stroke="#3a6ea8" stroke-width="1.25" stroke-dasharray="6,5"/>
+  <rect x="152" y="197" width="182" height="16" fill="#ffffff"/>
+  <text x="156" y="209" fill="#3a6ea8" font-size="11" font-weight="600">served from cache · CDN</text>
+
+  <!-- pays Rekognition zone (coral) -->
+  <rect x="584" y="404" width="312" height="156" rx="12" fill="none" stroke="#b5432a" stroke-width="1.25" stroke-dasharray="6,5"/>
+  <rect x="596" y="396" width="132" height="16" fill="#ffffff"/>
+  <text x="600" y="408" fill="#b5432a" font-size="11" font-weight="600">pays Rekognition</text>
+
+  <!-- ARROWS (behind blocks) -->
+  <!-- visitor -> people index (browse) -->
+  <line x1="472" y1="140" x2="304" y2="230" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- visitor -> result cache (upload selfie) -->
+  <line x1="568" y1="140" x2="736" y2="230" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- result cache -> Rekognition (miss) -->
+  <line x1="740" y1="332" x2="740" y2="428" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- result cache (hit) -> your photos -->
+  <path d="M 608 282 C 540 404, 556 566, 560 630" fill="none" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- Rekognition (matched) -> your photos -->
+  <path d="M 740 534 C 740 600, 702 660, 652 660" fill="none" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- Rekognition -> result cache (store, dashed, right margin) -->
+  <path d="M 872 482 C 940 440, 940 338, 874 302" fill="none" stroke="#7a7a82" stroke-width="1.25" stroke-dasharray="5,4" marker-end="url(#arrow-dash)"/>
+  <!-- people index -> your photos (pick a person) -->
+  <path d="M 300 332 C 332 470, 382 592, 452 630" fill="none" stroke="#a8a29a" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <!-- clustering rebuild -> people index (materialize once, dashed offline) -->
+  <line x1="220" y1="586" x2="220" y2="334" stroke="#7a7a82" stroke-width="1.25" stroke-dasharray="5,4" marker-end="url(#arrow-dash)"/>
+
+  <!-- ARROW LABELS -->
+  <rect x="378" y="171" width="52" height="15" fill="#ffffff"/>
+  <text x="404" y="182" fill="#8a8a8a" font-size="11" text-anchor="middle">browse</text>
+  <rect x="596" y="171" width="86" height="15" fill="#ffffff"/>
+  <text x="639" y="182" fill="#8a8a8a" font-size="11" text-anchor="middle">upload selfie</text>
+  <rect x="748" y="372" width="34" height="15" fill="#ffffff"/>
+  <text x="765" y="383" fill="#8a8a8a" font-size="11" text-anchor="middle">miss</text>
+  <rect x="486" y="452" width="72" height="15" fill="#ffffff"/>
+  <text x="522" y="463" fill="#8a8a8a" font-size="11" text-anchor="middle">hit · cached</text>
+  <rect x="668" y="596" width="92" height="15" fill="#ffffff"/>
+  <text x="714" y="607" fill="#8a8a8a" font-size="11" text-anchor="middle">matched photos</text>
+  <rect x="892" y="384" width="40" height="15" fill="#ffffff"/>
+  <text x="912" y="395" fill="#8a8a8a" font-size="11" text-anchor="middle">store</text>
+  <rect x="356" y="536" width="86" height="15" fill="#ffffff"/>
+  <text x="399" y="547" fill="#8a8a8a" font-size="11" text-anchor="middle">pick a person</text>
+  <rect x="86" y="444" width="126" height="30" fill="#ffffff"/>
+  <text x="206" y="455" fill="#8a8a8a" font-size="11" text-anchor="end">materialize once</text>
+  <text x="206" y="470" fill="#8a8a8a" font-size="11" text-anchor="end">offline · async</text>
+
+  <!-- BLOCKS -->
+  <!-- visitor (neutral, pill) -->
+  <rect x="392" y="84" width="256" height="56" rx="28" fill="#ffffff"/>
+  <rect x="392" y="84" width="256" height="56" rx="28" fill="#f1efe8" stroke="#d8d4c4" stroke-width="1.25"/>
+  <text x="520" y="117" fill="#4a4a4a" font-size="15" font-weight="500" text-anchor="middle">visitor</text>
+
+  <!-- people index (outcome / blue) -->
+  <rect x="168" y="232" width="264" height="100" rx="10" fill="#ffffff"/>
+  <rect x="168" y="232" width="264" height="100" rx="10" fill="#e7f1fb" stroke="#a8c8e8" stroke-width="1.25"/>
+  <text x="300" y="278" fill="#2a5580" font-size="15" font-weight="500" text-anchor="middle">people index</text>
+  <text x="300" y="298" fill="#3a70a8" font-size="11" font-weight="500" text-anchor="middle">GET /people · thumbnails · cached</text>
+
+  <!-- result cache (gate / mint) -->
+  <rect x="608" y="232" width="264" height="100" rx="10" fill="#ffffff"/>
+  <rect x="608" y="232" width="264" height="100" rx="10" fill="#e1f4ee" stroke="#9dd3c2" stroke-width="1.25"/>
+  <text x="740" y="278" fill="#1f6a56" font-size="15" font-weight="500" text-anchor="middle">result cache</text>
+  <text x="740" y="298" fill="#2f8a72" font-size="11" font-weight="500" text-anchor="middle">sha256(selfie) · TTL</text>
+
+  <!-- Rekognition (compute / lavender) -->
+  <rect x="608" y="430" width="264" height="104" rx="10" fill="#ffffff"/>
+  <rect x="608" y="430" width="264" height="104" rx="10" fill="#eeedfe" stroke="#b9b5e8" stroke-width="1.25"/>
+  <text x="740" y="478" fill="#3a3560" font-size="15" font-weight="500" text-anchor="middle">Rekognition</text>
+  <text x="740" y="498" fill="#6a63b0" font-size="11" font-weight="500" text-anchor="middle">DetectFaces · SearchFacesByImage</text>
+
+  <!-- clustering rebuild (compute / lavender) -->
+  <rect x="96" y="586" width="248" height="96" rx="10" fill="#ffffff"/>
+  <rect x="96" y="586" width="248" height="96" rx="10" fill="#eeedfe" stroke="#b9b5e8" stroke-width="1.25"/>
+  <text x="220" y="630" fill="#3a3560" font-size="15" font-weight="500" text-anchor="middle">clustering rebuild</text>
+  <text x="220" y="650" fill="#6a63b0" font-size="11" font-weight="500" text-anchor="middle">SearchFaces/face · union-find</text>
+
+  <!-- your photos (neutral, pill) -->
+  <rect x="392" y="632" width="256" height="56" rx="28" fill="#ffffff"/>
+  <rect x="392" y="632" width="256" height="56" rx="28" fill="#f1efe8" stroke="#d8d4c4" stroke-width="1.25"/>
+  <text x="520" y="665" fill="#4a4a4a" font-size="15" font-weight="500" text-anchor="middle">your photos</text>
+
+</svg>

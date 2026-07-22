@@ -10,6 +10,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { trimTrailingSlash } from "hono/trailing-slash";
 import { tenantManagementRoute } from "./auth/tenant.routes";
 import type { AppEnv } from "./auth/types";
+import { peopleManagementRoute } from "./people/people.routes";
 import { pictureAlbumManagementRoute } from "./picture-album-manager.routes";
 import { pictureSearchRoute } from "./search/picture-search.routes";
 
@@ -33,6 +34,7 @@ app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
 // facial — todos por API key, escopados ao tenant autenticado.
 app.route("/", tenantManagementRoute);
 app.route("/", pictureAlbumManagementRoute);
+app.route("/", peopleManagementRoute);
 app.route("/", pictureSearchRoute);
 
 app.doc("/api/reference", {
