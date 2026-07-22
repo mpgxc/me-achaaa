@@ -61,6 +61,17 @@ Toda rota de `/albums*` e `/search*` passa pelo middleware `apiKeyAuth`, que res
 - **Escopo por tenant** — antes de qualquer operação, verifica-se `album.tenantId == tenant` — senão **404** (sem vazar existência entre tenants).
 - **Provisionamento** — `POST /tenants` cria um tenant e emite a primeira API key. É protegido pelo segredo `ADMIN_API_KEY` (middleware `adminAuth`, comparação timing-safe), **não** pela API key de tenant.
 
+### Busca & navegação — dois caminhos por custo
+
+O uso mais comum é **navegar pelas pessoas** do álbum, não subir uma selfie a cada clique. Por isso há dois caminhos, separados por custo: a navegação por pessoa é **materializada e cacheável** (servível por CDN, sem Rekognition na leitura), e a busca por selfie é o **fallback** que paga Rekognition — com cache de resultado (`sha256(selfie)` + TTL) para não pagar duas vezes pela mesma busca.
+
+<p align="center">
+  <img src="docs/diagrams/browse-vs-selfie-search.svg" width="860" alt="Browse-by-person (cache/CDN) × busca por selfie (fallback)">
+</p>
+
+- **Navegar por pessoa** (barato, cacheável) — `PersonClusteringService.rebuild` agrupa as faces do álbum em "pessoas" via union-find sobre `SearchFaces` e grava registros `PERSON#`. As leituras `GET /albums/{id}/people` e `GET /albums/{id}/people/{personId}/photos` só leem o que foi materializado (zero Rekognition) e enviam `Cache-Control`.
+- **Buscar por selfie** (fallback, paga Rekognition) — `POST /search` checa o cache de resultado; no *miss*, chama `DetectFaces` + `SearchFacesByImage` e grava o resultado no cache.
+
 ---
 
 ## Modelo de dados (DynamoDB single-table)
@@ -74,6 +85,8 @@ Tabela `...-rekognition-bucket-assets-controll`, chaves `PK`/`SK`, com um GSI `S
 | Face | `ALBUM#{id}` | `FACE#{faceId}` | `Confidence`, `ExternalImageId` |
 | Tenant | `TENANT#{id}` | `METADATA` | `WebhookUrl` opcional |
 | API key | `APIKEY#{sha256(key)}` | `METADATA` | mapeia para `TenantId` (só o hash) |
+| Pessoa | `ALBUM#{id}` | `PERSON#{personId}` | cluster de faces (browse-by-person); `FaceIds`, `Images`, `CoverKey` |
+| Cache de busca | `SEARCHCACHE#{id}` | `HASH#{sha256(image)}` | resultado de `/search`; expira por TTL (`ExpiresAt`) |
 
 **Identidade unificada:** `externalClientAlbumId` == `CollectionId` do Rekognition == a partição do álbum — todos o mesmo UUID.
 
@@ -92,7 +105,10 @@ Tabela `...-rekognition-bucket-assets-controll`, chaves `PK`/`SK`, com um GSI `S
 | `GET` | `/albums/{id}/faces` | Lista as faces indexadas |
 | `DELETE` | `/albums/{id}/faces/{faceId}` | **Erasure de face (LGPD)** — Rekognition + S3 + Dynamo |
 | `POST` | `/albums/{id}/upload-url` | URL S3 pré-assinada para upload |
-| `POST` | `/search` | Busca por imagem (header `x-collection-id`, body `{ image }` base64) |
+| `GET` | `/albums/{id}/people` | **Navegar por pessoa** — lista os clusters (cacheável) |
+| `GET` | `/albums/{id}/people/{personId}/photos` | Fotos de uma pessoa (cacheável) |
+| `POST` | `/albums/{id}/people/rebuild` | Reconstrói os clusters (offline, paga Rekognition) |
+| `POST` | `/search` | Busca por imagem — selfie (header `x-collection-id`, body `{ image }` base64; com cache de resultado) |
 | `POST` | `/search/by-face-id` | Busca por `faceId` (header `x-collection-id`, body `{ faceId }`) |
 
 Docs interativas: **Swagger UI** em `/api/docs` e **Scalar** em `/api/docs/scalar`.
