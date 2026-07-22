@@ -1,0 +1,170 @@
+import { marshall } from "@aws-sdk/util-dynamodb";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { DynamoSingleton, RekognitionSingleton } from "../../../providers";
+import {
+	PersonClusteringService,
+	clusterFaces,
+} from "./person-clustering.service";
+
+vi.mock("../../../providers", () => ({
+	DynamoSingleton: { getInstance: () => ({ send: vi.fn(), tableName: "t" }) },
+	RekognitionSingleton: { getInstance: () => ({ send: vi.fn() }) },
+}));
+
+describe("clusterFaces", () => {
+	it("groups faces linked transitively into one person", () => {
+		// a~b, b~c → {a,b,c}; d isolado → {d}
+		const clusters = clusterFaces([
+			{ faceId: "a", neighbors: ["b"] },
+			{ faceId: "b", neighbors: ["c"] },
+			{ faceId: "c", neighbors: [] },
+			{ faceId: "d", neighbors: [] },
+		]);
+
+		expect(clusters).toEqual([["a", "b", "c"], ["d"]]);
+	});
+
+	it("keeps unrelated faces in separate clusters", () => {
+		const clusters = clusterFaces([
+			{ faceId: "x", neighbors: ["y"] },
+			{ faceId: "y", neighbors: ["x"] },
+			{ faceId: "z", neighbors: [] },
+		]);
+
+		expect(clusters).toEqual([["x", "y"], ["z"]]);
+	});
+
+	it("picks up neighbors not present as their own entry", () => {
+		// 'b' aparece só como vizinho de 'a' — ainda deve entrar no cluster.
+		expect(clusterFaces([{ faceId: "a", neighbors: ["b"] }])).toEqual([
+			["a", "b"],
+		]);
+	});
+
+	it("is deterministic regardless of input order", () => {
+		const forward = clusterFaces([
+			{ faceId: "a", neighbors: ["b"] },
+			{ faceId: "c", neighbors: ["d"] },
+		]);
+		const backward = clusterFaces([
+			{ faceId: "c", neighbors: ["d"] },
+			{ faceId: "a", neighbors: ["b"] },
+		]);
+
+		expect(forward).toEqual(backward);
+		expect(forward).toEqual([
+			["a", "b"],
+			["c", "d"],
+		]);
+	});
+});
+
+describe("PersonClusteringService", () => {
+	const dynamoSend = vi.fn();
+	const rekognitionSend = vi.fn();
+	let service: PersonClusteringService;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		service = new PersonClusteringService(
+			{ send: dynamoSend, tableName: "t" } as unknown as DynamoSingleton,
+			{ send: rekognitionSend } as unknown as RekognitionSingleton,
+		);
+	});
+
+	describe("listPeople", () => {
+		it("maps PERSON# records to lightweight summaries", async () => {
+			dynamoSend.mockResolvedValue({
+				Items: [
+					marshall({
+						PK: "ALBUM#col",
+						SK: "PERSON#p1",
+						PersonId: "p1",
+						CoverFaceId: "p1",
+						CoverKey: "uploads/faces/col/p1.jpg",
+						FaceCount: 3,
+						PhotoCount: 2,
+					}),
+				],
+				LastEvaluatedKey: undefined,
+			});
+
+			expect(await service.listPeople("col")).toEqual([
+				{
+					personId: "p1",
+					coverFaceId: "p1",
+					coverKey: "uploads/faces/col/p1.jpg",
+					faceCount: 3,
+					photoCount: 2,
+				},
+			]);
+		});
+	});
+
+	describe("getPersonPhotos", () => {
+		it("returns the person's images on a hit", async () => {
+			dynamoSend.mockResolvedValue({
+				Item: marshall({
+					PK: "ALBUM#col",
+					SK: "PERSON#p1",
+					PersonId: "p1",
+					Images: ["img-1", "img-2"],
+				}),
+			});
+
+			expect(await service.getPersonPhotos("col", "p1")).toEqual({
+				personId: "p1",
+				images: ["img-1", "img-2"],
+			});
+		});
+
+		it("returns null when the person does not exist", async () => {
+			dynamoSend.mockResolvedValue({ Item: undefined });
+
+			expect(await service.getPersonPhotos("col", "nope")).toBeNull();
+		});
+	});
+
+	describe("rebuild", () => {
+		it("clusters faces and materializes one PERSON# per cluster", async () => {
+			// listFaceRows → duas faces da mesma pessoa (f1~f2) em imagens distintas.
+			dynamoSend.mockImplementation((command) => {
+				const sk = command.input.ExpressionAttributeValues?.[":sk"]?.S;
+
+				if (sk === "FACE#") {
+					return Promise.resolve({
+						Items: [
+							marshall({ FaceId: "f1", ExternalImageId: "img-1" }),
+							marshall({ FaceId: "f2", ExternalImageId: "img-2" }),
+						],
+					});
+				}
+
+				// clearPeople (listPeople) e os PutItem/DeleteItem.
+				return Promise.resolve({ Items: [] });
+			});
+
+			rekognitionSend.mockImplementation((command) => {
+				const faceId = command.input.FaceId;
+
+				return Promise.resolve({
+					FaceMatches: [{ Face: { FaceId: faceId === "f1" ? "f2" : "f1" } }],
+				});
+			});
+
+			const summary = await service.rebuild("col");
+
+			expect(summary).toEqual({ people: 1, faces: 2 });
+
+			// Grava exatamente uma pessoa, com capa = menor faceId e as 2 imagens.
+			const put = dynamoSend.mock.calls
+				.map(([command]) => command)
+				.find((command) => command.input.Item?.SK?.S?.startsWith("PERSON#"));
+
+			expect(put.input.Item.SK.S).toBe("PERSON#f1");
+			expect(put.input.Item.CoverKey.S).toBe("uploads/faces/col/f1.jpg");
+			expect(put.input.Item.PhotoCount.N).toBe("2");
+			expect(put.input.Item.FaceCount.N).toBe("2");
+		});
+	});
+});
