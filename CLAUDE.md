@@ -47,6 +47,7 @@ This is an **event-driven pipeline**, not a monolithic API. An upload triggers a
   - Face → `PK=ALBUM#{id}`, `SK=FACE#{faceId}`
   - Tenant → `PK=TENANT#{tenantId}`, `SK=METADATA`
   - API key → `PK=APIKEY#{sha256(key)}`, `SK=METADATA` (stores only the key **hash** → `TenantId`)
+  - Search cache → `PK=SEARCHCACHE#{collectionId}`, `SK=HASH#{sha256(image)}` (cached `/search` result; auto-expired by DynamoDB TTL on the `ExpiresAt` attribute — avoids re-paying Rekognition for an identical selfie search)
 - **Auth & multi-tenancy** (`picture-album-manager/auth/`): all `/albums*` routes require an API key (`Authorization: Bearer <key>` or `x-api-key`) resolved to a tenant by `apiKeyAuth`; each album operation is scoped to the caller's tenant via `service.getAlbum(...).tenantId`. Tenant provisioning (`POST /tenants`) is guarded by the `ADMIN_API_KEY` env secret (`adminAuth`, timing-safe compare). Keys are generated with a `sls_` prefix and persisted only as a SHA-256 hash.
 - **S3 key layout:** `uploads/incoming/`, `uploads/faces/`, `uploads/thumbnails/`, each namespaced by `{collectionId}`.
 - **SQS batch handlers** return `{ batchItemFailures }` (`ReportBatchItemFailures`) so only failed messages are retried; per-message errors are caught and pushed to that array rather than thrown.

@@ -8,12 +8,14 @@ import {
 	searchByImageRoute,
 } from "./picture-search.openapi";
 import { PictureSearchService } from "./picture-search.service";
+import { SearchCacheService, hashImage } from "./search-cache.service";
 
 export const pictureSearchRoute = new OpenAPIHono<AppEnv>();
 
 const albumService = new PictureAlbumManagementService();
 const searchService = new PictureSearchService();
 const tenantService = new TenantService();
+const cacheService = new SearchCacheService();
 
 const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024; // 5 MB
 
@@ -44,6 +46,15 @@ pictureSearchRoute.openapi(searchByImageRoute, async (ctx) => {
 			);
 		}
 
+		// Cache-hit serve a mesma busca sem pagar Rekognition (nem DetectFaces
+		// nem SearchFacesByImage). Já validado na 1ª vez, então pulamos direto.
+		const cacheKey = hashImage(buffer);
+		const cached = await cacheService.get(collectionId, cacheKey);
+
+		if (cached !== null) {
+			return ctx.json({ images: cached }, 200);
+		}
+
 		const faces = await searchService.countFaces(buffer);
 
 		if (faces === 0) {
@@ -58,6 +69,9 @@ pictureSearchRoute.openapi(searchByImageRoute, async (ctx) => {
 		}
 
 		const images = await searchService.searchByImage(collectionId, buffer);
+
+		// Guarda o resultado (inclusive "sem matches") para as próximas buscas.
+		await cacheService.put(collectionId, cacheKey, images);
 
 		return ctx.json({ images }, 200);
 	} catch (error) {
