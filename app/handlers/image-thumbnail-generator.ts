@@ -42,7 +42,7 @@ const generateThumbnailWithWatermark = async (image: Uint8Array) => {
 				gravity: "southeast",
 			},
 		])
-		.toFormat("jpg")
+		.toFormat("jpeg")
 		.toBuffer();
 };
 
