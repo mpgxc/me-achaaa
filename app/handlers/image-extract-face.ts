@@ -14,6 +14,7 @@ import type { SQSBatchResponse, SQSEvent } from "aws-lambda";
 import sharp from "sharp";
 import { extractExternalImageId, splitBatches } from "../helpers/commons";
 import { DynamoSingleton, S3Singleton, SqsSingleton } from "../providers";
+import { PersonClusteringService } from "./picture-album-manager/people/person-clustering.service";
 import { SearchCacheService } from "./picture-album-manager/search/search-cache.service";
 import type { ImageProcessingEvent } from "./types";
 
@@ -23,6 +24,7 @@ const dynamodb = DynamoSingleton.getInstance();
 const s3Client = S3Singleton.getInstance();
 const sqsClient = SqsSingleton.getInstance();
 const searchCache = new SearchCacheService(dynamodb);
+const peopleService = new PersonClusteringService();
 
 /**
  * Monta o evento de conclusão emitido quando as faces de uma imagem foram
@@ -262,7 +264,32 @@ const processImagesHandler = async (images: ImageProcessingEvent[]) => {
 
 	await registerFacesImageMetadata(faces);
 	await invalidateSearchCache(faces);
+	await scheduleAutoRebuilds(faces);
 	await emitProcessedNotifications(processed);
+};
+
+/**
+ * Agenda (com debounce) o rebuild dos clusters de pessoas das coleções que
+ * receberam faces novas, para que a navegação por pessoa fique pronta sem
+ * chamada manual. Side-effect não-crítico, logado sem derrubar o processamento
+ * — o rebuild também pode ser disparado sob demanda via `POST /people/rebuild`.
+ */
+const scheduleAutoRebuilds = async (faces: ExtractFacePictureOutput[]) => {
+	const collectionIds = [
+		...new Set(faces.map(({ CollectionId }) => CollectionId)),
+	];
+
+	await Promise.all(
+		collectionIds.map((collectionId) =>
+			peopleService.scheduleAutoRebuild(collectionId).catch((error) => {
+				console.error(
+					`ScheduleAutoRebuilds: falha ao agendar rebuild de ${collectionId}: ${
+						error instanceof Error ? error.message : JSON.stringify(error)
+					}`,
+				);
+			}),
+		),
+	);
 };
 
 /**

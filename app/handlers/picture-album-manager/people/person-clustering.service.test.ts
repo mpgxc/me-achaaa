@@ -295,6 +295,94 @@ describe("PersonClusteringService", () => {
 		});
 	});
 
+	describe("scheduleAutoRebuild", () => {
+		it("enqueues a delayed auto message and writes the pending marker", async () => {
+			dynamoSend.mockResolvedValue({});
+			sqsSend.mockResolvedValue({});
+
+			await service.scheduleAutoRebuild("col");
+
+			const message = sqsSend.mock.calls[0][0];
+			expect(message.input.DelaySeconds).toBeGreaterThan(0);
+
+			const body = JSON.parse(message.input.MessageBody);
+			expect(body).toMatchObject({ collectionId: "col", mode: "auto" });
+			expect(body.token).toBeTruthy();
+
+			// O marcador guarda o MESMO token da mensagem (para o debounce coalescer).
+			const marker = dynamoSend.mock.calls
+				.map(([command]) => command)
+				.find(
+					(command) => command.input.Item?.SK?.S === "PERSONREBUILD#PENDING",
+				);
+			expect(marker.input.Item.Token.S).toBe(body.token);
+		});
+
+		it("no-ops when the queue is not configured", async () => {
+			const svc = new PersonClusteringService(
+				{ send: dynamoSend, tableName: "t" } as unknown as DynamoSingleton,
+				{ send: rekognitionSend } as unknown as RekognitionSingleton,
+				{ send: sqsSend, queueUrl: {} } as unknown as SqsSingleton,
+			);
+
+			await svc.scheduleAutoRebuild("col");
+
+			expect(sqsSend).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("runAutoRebuild", () => {
+		it("runs the rebuild and clears the marker when the token is current", async () => {
+			dynamoSend.mockImplementation((command) => {
+				if (
+					command.constructor.name === "GetItemCommand" &&
+					command.input.Key.SK.S === "PERSONREBUILD#PENDING"
+				) {
+					return Promise.resolve({
+						Item: marshall({
+							PK: "ALBUM#col",
+							SK: "PERSONREBUILD#PENDING",
+							Token: "tok",
+						}),
+					});
+				}
+
+				return Promise.resolve({ Items: [] });
+			});
+
+			expect(await service.runAutoRebuild("col", "tok")).toBe(true);
+
+			const clearedMarker = dynamoSend.mock.calls
+				.map(([command]) => command)
+				.find(
+					(command) =>
+						command.constructor.name === "DeleteItemCommand" &&
+						command.input.Key.SK.S === "PERSONREBUILD#PENDING",
+				);
+			expect(clearedMarker).toBeTruthy();
+		});
+
+		it("skips (coalesces) when a newer upload replaced the token", async () => {
+			dynamoSend.mockImplementation((command) => {
+				if (command.constructor.name === "GetItemCommand") {
+					return Promise.resolve({ Item: marshall({ Token: "newer" }) });
+				}
+
+				return Promise.resolve({ Items: [] });
+			});
+
+			expect(await service.runAutoRebuild("col", "old")).toBe(false);
+
+			// Não roda o rebuild → nenhum status "running" foi gravado.
+			const statusWrites = dynamoSend.mock.calls
+				.map(([command]) => command)
+				.filter(
+					(command) => command.input.Item?.SK?.S === "PERSONREBUILD#STATUS",
+				);
+			expect(statusWrites).toHaveLength(0);
+		});
+	});
+
 	describe("getRebuildStatus", () => {
 		it("returns the stored status without the key attributes", async () => {
 			dynamoSend.mockResolvedValue({

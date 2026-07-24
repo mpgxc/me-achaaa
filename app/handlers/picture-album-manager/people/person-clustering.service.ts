@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
 	type AttributeValue,
 	DeleteItemCommand,
@@ -22,6 +23,10 @@ const MAX_FACES_PER_SEARCH = 100;
 
 // Uma linha de status por álbum, atualizada ao longo do rebuild assíncrono.
 const REBUILD_STATUS_SK = "PERSONREBUILD#STATUS";
+// Marcador de "rebuild pendente" (debounce do rebuild automático).
+const REBUILD_PENDING_SK = "PERSONREBUILD#PENDING";
+// Janela de silêncio do debounce: coalesce um lote de uploads num rebuild só.
+const AUTO_REBUILD_QUIET_SECONDS = 120;
 
 const coverKeyFor = (collectionId: string, faceId: string): string =>
 	`uploads/faces/${collectionId}/${faceId}.jpg`;
@@ -182,6 +187,90 @@ export class PersonClusteringService {
 				MessageBody: JSON.stringify({ collectionId }),
 			}),
 		);
+	}
+
+	/**
+	 * Agenda um rebuild automático com **debounce**: cada face indexada chama
+	 * isto, mas só o rebuild deve rodar uma vez, depois que os uploads param.
+	 * Enfileira uma mensagem atrasada (`DelaySeconds`) e grava um marcador
+	 * `PERSONREBUILD#PENDING` com um `token`; quando a mensagem "acorda", o
+	 * worker só roda se o token dela ainda for o vigente (`runAutoRebuild`) —
+	 * uploads posteriores sobrescrevem o token e invalidam as mensagens antigas,
+	 * coalescendo o lote todo num rebuild só após a janela de silêncio.
+	 *
+	 * Enfileira antes de gravar o marcador: se o `PutItem` falhar, o marcador
+	 * anterior continua válido e a mensagem dele roda — garante que ao menos um
+	 * rebuild aconteça (o rebuild sempre lê as faces atuais, então qual mensagem
+	 * "vence" não afeta a corretude, só evita rodar N vezes).
+	 */
+	async scheduleAutoRebuild(collectionId: string): Promise<void> {
+		const queueUrl = this.sqs.queueUrl.PERSON_REBUILD;
+
+		if (!queueUrl) {
+			return; // rebuild automático desabilitado se a fila não existe
+		}
+
+		const token = `${new Date().toISOString()}-${randomUUID()}`;
+
+		await this.sqs.send(
+			new SendMessageCommand({
+				QueueUrl: queueUrl,
+				DelaySeconds: AUTO_REBUILD_QUIET_SECONDS,
+				MessageBody: JSON.stringify({ collectionId, mode: "auto", token }),
+			}),
+		);
+
+		await this.dynamo.send(
+			new PutItemCommand({
+				TableName: this.dynamo.tableName,
+				Item: marshall({
+					PK: `ALBUM#${collectionId}`,
+					SK: REBUILD_PENDING_SK,
+					Token: token,
+				}),
+			}),
+		);
+	}
+
+	/**
+	 * Executa um rebuild automático se a mensagem não estiver obsoleta. Compara
+	 * o `token` da mensagem com o marcador vigente: se um upload mais novo já
+	 * sobrescreveu o token, esta mensagem é descartada (a mais nova roda). Só
+	 * apaga o marcador após um rebuild bem-sucedido, para que um erro reprocesse
+	 * (o marcador segue válido enquanto não houver upload novo). Retorna se rodou.
+	 */
+	async runAutoRebuild(collectionId: string, token: string): Promise<boolean> {
+		const { Item } = await this.dynamo.send(
+			new GetItemCommand({
+				TableName: this.dynamo.tableName,
+				Key: marshall({
+					PK: `ALBUM#${collectionId}`,
+					SK: REBUILD_PENDING_SK,
+				}),
+			}),
+		);
+
+		const currentToken = Item
+			? (unmarshall(Item).Token as string | undefined)
+			: undefined;
+
+		if (currentToken !== token) {
+			return false; // mensagem obsoleta: chegou upload mais novo depois dela
+		}
+
+		await this.processRebuild(collectionId);
+
+		await this.dynamo.send(
+			new DeleteItemCommand({
+				TableName: this.dynamo.tableName,
+				Key: marshall({
+					PK: `ALBUM#${collectionId}`,
+					SK: REBUILD_PENDING_SK,
+				}),
+			}),
+		);
+
+		return true;
 	}
 
 	async getRebuildStatus(collectionId: string): Promise<RebuildStatus | null> {

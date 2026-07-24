@@ -43,7 +43,7 @@ Um upload dispara um fan-out de Lambdas. Nada disso está no caminho síncrono d
 1. **Upload** — o cliente pega uma URL S3 pré-assinada (rota `/albums/{id}/upload-url`) e envia a imagem para `uploads/incoming/{collectionId}/{imageId}.jpg`.
 2. **S3 → SQS** — o evento `s3:ObjectCreated` empurra para a `FaceRecognitionQueue`.
 3. **`DetectAndIndexFaces`** — consome a fila, chama `IndexFaces` no Rekognition, grava o item `IMAGE#` e faz **fan-out** para duas filas.
-4. **`ImageExtractFace`** — recorta cada rosto com `sharp`, salva em `uploads/faces/...`, grava os registros `FACE#` e emite `image.processed` na `NotificationQueue`.
+4. **`ImageExtractFace`** — recorta cada rosto com `sharp`, salva em `uploads/faces/...`, grava os registros `FACE#`, emite `image.processed` na `NotificationQueue`, invalida o cache de busca da coleção e **agenda (com debounce) o rebuild dos clusters de pessoas**.
 5. **`ImageThumbnailGenerator`** — redimensiona e aplica a marca d'água, salvando em `uploads/thumbnails/...`.
 6. **`NotificationDispatcher`** — consome a `NotificationQueue`, resolve o `webhookUrl` do tenant e faz `POST` do evento (com retry + DLQ do SQS).
 
