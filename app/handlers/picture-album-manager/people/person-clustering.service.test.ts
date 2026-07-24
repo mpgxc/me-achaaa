@@ -167,4 +167,86 @@ describe("PersonClusteringService", () => {
 			expect(put.input.Item.FaceCount.N).toBe("2");
 		});
 	});
+
+	describe("removeFace", () => {
+		const personRecord = (faces: { faceId: string; imageId?: string }[]) =>
+			marshall(
+				{
+					PK: "ALBUM#col",
+					SK: `PERSON#${faces.map((f) => f.faceId).sort()[0]}`,
+					PersonId: faces.map((f) => f.faceId).sort()[0],
+					FaceIds: faces.map((f) => f.faceId).sort(),
+					Faces: faces,
+					Images: [...new Set(faces.map((f) => f.imageId))].sort(),
+				},
+				{ removeUndefinedValues: true },
+			);
+
+		const commandsOf = (name: string) =>
+			dynamoSend.mock.calls
+				.map(([command]) => command)
+				.filter((command) => command.constructor.name === name);
+
+		it("prunes the face and reassigns the cover to the next smallest faceId", async () => {
+			dynamoSend.mockImplementation((command) => {
+				if (command.constructor.name === "QueryCommand") {
+					return Promise.resolve({
+						Items: [
+							personRecord([
+								{ faceId: "f1", imageId: "img-1" },
+								{ faceId: "f2", imageId: "img-2" },
+							]),
+						],
+					});
+				}
+
+				return Promise.resolve({});
+			});
+
+			expect(await service.removeFace("col", "f1")).toBe(true);
+
+			// Apaga o registro antigo (personId = f1) e regrava sob a nova capa f2.
+			expect(commandsOf("DeleteItemCommand")[0].input.Key.SK.S).toBe(
+				"PERSON#f1",
+			);
+			const put = commandsOf("PutItemCommand")[0];
+			expect(put.input.Item.SK.S).toBe("PERSON#f2");
+			expect(put.input.Item.PhotoCount.N).toBe("1");
+			expect(put.input.Item.FaceCount.N).toBe("1");
+		});
+
+		it("deletes the cluster when the removed face was its only member", async () => {
+			dynamoSend.mockImplementation((command) => {
+				if (command.constructor.name === "QueryCommand") {
+					return Promise.resolve({
+						Items: [personRecord([{ faceId: "f1", imageId: "img-1" }])],
+					});
+				}
+
+				return Promise.resolve({});
+			});
+
+			expect(await service.removeFace("col", "f1")).toBe(true);
+			expect(commandsOf("DeleteItemCommand")[0].input.Key.SK.S).toBe(
+				"PERSON#f1",
+			);
+			expect(commandsOf("PutItemCommand")).toHaveLength(0);
+		});
+
+		it("returns false when the face is in no cluster", async () => {
+			dynamoSend.mockImplementation((command) => {
+				if (command.constructor.name === "QueryCommand") {
+					return Promise.resolve({
+						Items: [personRecord([{ faceId: "f9", imageId: "img-9" }])],
+					});
+				}
+
+				return Promise.resolve({});
+			});
+
+			expect(await service.removeFace("col", "nope")).toBe(false);
+			expect(commandsOf("DeleteItemCommand")).toHaveLength(0);
+			expect(commandsOf("PutItemCommand")).toHaveLength(0);
+		});
+	});
 });

@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import {
+	type AttributeValue,
+	DeleteItemCommand,
+	GetItemCommand,
+	PutItemCommand,
+	QueryCommand,
+} from "@aws-sdk/client-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import { DynamoSingleton } from "../../../providers";
 
@@ -71,5 +77,43 @@ export class SearchCacheService {
 				}),
 			}),
 		);
+	}
+
+	/**
+	 * Descarta todo o cache de busca de uma coleção. Chamado quando o conjunto
+	 * de faces do álbum muda (nova indexação ou remoção por LGPD) — senão uma
+	 * busca cacheada continuaria devolvendo fotos de uma face já apagada, ou
+	 * deixaria de fora fotos recém-indexadas, por até o TTL inteiro.
+	 */
+	async invalidate(collectionId: string): Promise<void> {
+		let exclusiveStartKey: Record<string, AttributeValue> | undefined;
+
+		do {
+			const { Items, LastEvaluatedKey } = await this.dynamo.send(
+				new QueryCommand({
+					TableName: this.dynamo.tableName,
+					KeyConditionExpression: "PK = :pk",
+					ExpressionAttributeValues: marshall({
+						":pk": `SEARCHCACHE#${collectionId}`,
+					}),
+					ExclusiveStartKey: exclusiveStartKey,
+				}),
+			);
+
+			await Promise.all(
+				(Items ?? []).map((item) => {
+					const { SK } = unmarshall(item) as { SK: string };
+
+					return this.dynamo.send(
+						new DeleteItemCommand({
+							TableName: this.dynamo.tableName,
+							Key: marshall({ PK: `SEARCHCACHE#${collectionId}`, SK }),
+						}),
+					);
+				}),
+			);
+
+			exclusiveStartKey = LastEvaluatedKey;
+		} while (exclusiveStartKey);
 	}
 }

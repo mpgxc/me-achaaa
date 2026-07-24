@@ -98,6 +98,17 @@ export const clusterFaces = (faces: FaceNeighbors[]): string[][] => {
 
 type FaceRow = { FaceId: string; ExternalImageId?: string };
 
+// Referência face→imagem guardada em cada PERSON#, para podar uma face do
+// cluster (LGPD) sem precisar reconstruir tudo pelo Rekognition.
+type PersonFaceRef = { faceId: string; imageId?: string };
+
+type PersonRecord = {
+	PersonId: string;
+	FaceIds?: string[];
+	Faces?: PersonFaceRef[];
+	Images?: string[];
+};
+
 export type PersonSummary = {
 	personId: string;
 	coverFaceId: string;
@@ -223,35 +234,105 @@ export class PersonClusteringService {
 		await this.clearPeople(collectionId);
 
 		for (const cluster of clusters) {
-			const personId = cluster[0];
-			const images = [
-				...new Set(
-					cluster
-						.map((faceId) => imageOf.get(faceId))
-						.filter((id): id is string => Boolean(id)),
-				),
-			].sort();
+			await this.putPerson(
+				collectionId,
+				cluster.map((faceId) => ({ faceId, imageId: imageOf.get(faceId) })),
+			);
+		}
 
-			await this.dynamo.send(
-				new PutItemCommand({
-					TableName: this.dynamo.tableName,
-					Item: marshall({
+		return { people: clusters.length, faces: faces.length };
+	}
+
+	/**
+	 * Remove uma face dos clusters materializados — direito ao esquecimento
+	 * (LGPD): após apagar o `FACE#`, a pessoa não pode continuar aparecendo na
+	 * navegação por pessoa. Poda a face do `PERSON#` que a contém, reatribuindo
+	 * a capa (menor `faceId`) e recalculando as fotos; apaga o cluster se ficar
+	 * vazio. Retorna `false` se a face não estava em nenhum cluster.
+	 */
+	async removeFace(collectionId: string, faceId: string): Promise<boolean> {
+		const records = await this.listPersonRecords(collectionId);
+
+		const person = records.find(
+			(record) =>
+				(record.FaceIds ?? []).includes(faceId) ||
+				(record.Faces ?? []).some((face) => face.faceId === faceId),
+		);
+
+		if (!person) {
+			return false;
+		}
+
+		// A capa (personId) é o menor faceId, então podar pode trocar o personId
+		// (que é a SK): apaga o registro atual antes de regravar.
+		await this.deletePerson(collectionId, person.PersonId);
+
+		// Registro legado sem o mapa face→imagem: não dá pra recalcular as fotos
+		// com precisão, então derruba o cluster inteiro — o próximo rebuild o
+		// repovoa já sem a face apagada.
+		if (!person.Faces) {
+			return true;
+		}
+
+		const remaining = person.Faces.filter((face) => face.faceId !== faceId);
+
+		if (remaining.length > 0) {
+			await this.putPerson(collectionId, remaining);
+		}
+
+		return true;
+	}
+
+	private async putPerson(
+		collectionId: string,
+		faces: PersonFaceRef[],
+	): Promise<void> {
+		const faceIds = faces.map((face) => face.faceId).sort();
+		const personId = faceIds[0];
+		const images = [
+			...new Set(
+				faces
+					.map((face) => face.imageId)
+					.filter((id): id is string => Boolean(id)),
+			),
+		].sort();
+
+		await this.dynamo.send(
+			new PutItemCommand({
+				TableName: this.dynamo.tableName,
+				Item: marshall(
+					{
 						PK: `ALBUM#${collectionId}`,
 						SK: `PERSON#${personId}`,
 						PersonId: personId,
 						CoverFaceId: personId,
 						CoverKey: coverKeyFor(collectionId, personId),
-						FaceIds: cluster,
+						FaceIds: faceIds,
+						Faces: faces,
 						Images: images,
-						FaceCount: cluster.length,
+						FaceCount: faceIds.length,
 						PhotoCount: images.length,
 						UpdatedAt: new Date().toISOString(),
-					}),
-				}),
-			);
-		}
+					},
+					{ removeUndefinedValues: true },
+				),
+			}),
+		);
+	}
 
-		return { people: clusters.length, faces: faces.length };
+	private async deletePerson(
+		collectionId: string,
+		personId: string,
+	): Promise<void> {
+		await this.dynamo.send(
+			new DeleteItemCommand({
+				TableName: this.dynamo.tableName,
+				Key: marshall({
+					PK: `ALBUM#${collectionId}`,
+					SK: `PERSON#${personId}`,
+				}),
+			}),
+		);
 	}
 
 	private async searchNeighbors(
@@ -304,20 +385,41 @@ export class PersonClusteringService {
 		return rows;
 	}
 
+	private async listPersonRecords(
+		collectionId: string,
+	): Promise<PersonRecord[]> {
+		const records: PersonRecord[] = [];
+		let exclusiveStartKey: Record<string, AttributeValue> | undefined;
+
+		do {
+			const { Items, LastEvaluatedKey } = await this.dynamo.send(
+				new QueryCommand({
+					TableName: this.dynamo.tableName,
+					KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+					ExpressionAttributeValues: marshall({
+						":pk": `ALBUM#${collectionId}`,
+						":sk": "PERSON#",
+					}),
+					ExclusiveStartKey: exclusiveStartKey,
+				}),
+			);
+
+			for (const item of Items ?? []) {
+				records.push(unmarshall(item) as PersonRecord);
+			}
+
+			exclusiveStartKey = LastEvaluatedKey;
+		} while (exclusiveStartKey);
+
+		return records;
+	}
+
 	private async clearPeople(collectionId: string): Promise<void> {
 		const existing = await this.listPeople(collectionId);
 
 		await Promise.all(
 			existing.map((person) =>
-				this.dynamo.send(
-					new DeleteItemCommand({
-						TableName: this.dynamo.tableName,
-						Key: marshall({
-							PK: `ALBUM#${collectionId}`,
-							SK: `PERSON#${person.personId}`,
-						}),
-					}),
-				),
+				this.deletePerson(collectionId, person.personId),
 			),
 		);
 	}

@@ -14,6 +14,7 @@ import type { SQSBatchResponse, SQSEvent } from "aws-lambda";
 import sharp from "sharp";
 import { extractExternalImageId, splitBatches } from "../helpers/commons";
 import { DynamoSingleton, S3Singleton, SqsSingleton } from "../providers";
+import { SearchCacheService } from "./picture-album-manager/search/search-cache.service";
 import type { ImageProcessingEvent } from "./types";
 
 const TRANSACTIONS_LIMIT_PER_BATCH = 50;
@@ -21,6 +22,7 @@ const TRANSACTIONS_LIMIT_PER_BATCH = 50;
 const dynamodb = DynamoSingleton.getInstance();
 const s3Client = S3Singleton.getInstance();
 const sqsClient = SqsSingleton.getInstance();
+const searchCache = new SearchCacheService(dynamodb);
 
 /**
  * Monta o evento de conclusão emitido quando as faces de uma imagem foram
@@ -259,7 +261,33 @@ const processImagesHandler = async (images: ImageProcessingEvent[]) => {
 	}
 
 	await registerFacesImageMetadata(faces);
+	await invalidateSearchCache(faces);
 	await emitProcessedNotifications(processed);
+};
+
+/**
+ * Novas faces indexadas ⇒ o cache de busca da coleção ficou defasado (uma
+ * selfie já buscada agora casaria com fotos novas). Descarta o cache das
+ * coleções afetadas. Side-effect não-crítico: uma falha aqui NÃO deve derrubar
+ * o processamento (o TTL do cache é a rede de segurança), então logamos em vez
+ * de propagar — ao contrário do IndexFaces, cujo erro precisa reprocessar.
+ */
+const invalidateSearchCache = async (faces: ExtractFacePictureOutput[]) => {
+	const collectionIds = [
+		...new Set(faces.map(({ CollectionId }) => CollectionId)),
+	];
+
+	await Promise.all(
+		collectionIds.map((collectionId) =>
+			searchCache.invalidate(collectionId).catch((error) => {
+				console.error(
+					`InvalidateSearchCache: falha ao limpar cache de ${collectionId}: ${
+						error instanceof Error ? error.message : JSON.stringify(error)
+					}`,
+				);
+			}),
+		),
+	);
 };
 
 const registerFacesImageMetadata = async (

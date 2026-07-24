@@ -34,6 +34,22 @@ vi.mock("./auth/tenant.service", () => ({
 	},
 }));
 
+const mockCacheInvalidate = vi.fn();
+
+vi.mock("./search/search-cache.service", () => ({
+	SearchCacheService: class {
+		invalidate = mockCacheInvalidate;
+	},
+}));
+
+const mockRemoveFace = vi.fn();
+
+vi.mock("./people/person-clustering.service", () => ({
+	PersonClusteringService: class {
+		removeFace = mockRemoveFace;
+	},
+}));
+
 const mockGetSignedUrl = vi
 	.fn()
 	.mockResolvedValue("https://s3.example.com/presigned");
@@ -73,6 +89,8 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	mockGetSignedUrl.mockResolvedValue("https://s3.example.com/presigned");
 	mockResolveTenant.mockResolvedValue({ id: TENANT_ID });
+	mockCacheInvalidate.mockResolvedValue(undefined);
+	mockRemoveFace.mockResolvedValue(true);
 });
 
 describe("authentication", () => {
@@ -296,9 +314,26 @@ describe("DELETE /albums/:externalClientAlbumId/faces/:faceId", () => {
 
 		expect(res.status).toBe(200);
 		expect(mockDeleteFace).toHaveBeenCalledWith(VALID_UUID, FACE_ID);
+		// LGPD: limpa os dados derivados (cache de busca + clusters de pessoa).
+		expect(mockCacheInvalidate).toHaveBeenCalledWith(VALID_UUID);
+		expect(mockRemoveFace).toHaveBeenCalledWith(VALID_UUID, FACE_ID);
 	});
 
-	it("returns 404 when the face does not exist", async () => {
+	it("still returns 200 when the derived-data cleanup fails", async () => {
+		mockGetAlbum.mockResolvedValue({ tenantId: TENANT_ID, content: {} });
+		mockDeleteFace.mockResolvedValue(true);
+		// O esquecimento em si já aconteceu; a limpeza é best-effort (TTL cobre).
+		mockCacheInvalidate.mockRejectedValue(new Error("dynamo down"));
+
+		const res = await pictureAlbumManagementRoute.request(
+			`/albums/${VALID_UUID}/faces/${FACE_ID}`,
+			{ method: "DELETE", headers: authHeaders },
+		);
+
+		expect(res.status).toBe(200);
+	});
+
+	it("does not touch derived data when the face does not exist", async () => {
 		mockGetAlbum.mockResolvedValue({ tenantId: TENANT_ID, content: {} });
 		mockDeleteFace.mockResolvedValue(false);
 
@@ -308,6 +343,8 @@ describe("DELETE /albums/:externalClientAlbumId/faces/:faceId", () => {
 		);
 
 		expect(res.status).toBe(404);
+		expect(mockCacheInvalidate).not.toHaveBeenCalled();
+		expect(mockRemoveFace).not.toHaveBeenCalled();
 	});
 
 	it("returns 404 when the album belongs to another tenant", async () => {
