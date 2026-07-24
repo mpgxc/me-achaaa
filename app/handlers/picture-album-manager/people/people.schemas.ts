@@ -5,6 +5,9 @@ export const PersonSummarySchema = z
 		personId: z.string(),
 		coverFaceId: z.string(),
 		coverKey: z.string().describe("Chave S3 do recorte de rosto da capa"),
+		coverUrl: z
+			.string()
+			.describe("URL assinada (GET) do recorte de rosto da capa"),
 		faceCount: z.number(),
 		photoCount: z.number(),
 	})
@@ -19,7 +22,15 @@ export const ListPeopleResponse = z
 export const PersonPhotosResponse = z
 	.object({
 		personId: z.string(),
-		images: z.array(z.string()),
+		images: z.array(z.string()).describe("IDs das fotos (ExternalImageId)"),
+		photos: z
+			.array(
+				z.object({
+					imageId: z.string(),
+					url: z.string().describe("URL assinada (GET) do thumbnail"),
+				}),
+			)
+			.describe("Fotos da pessoa com URL assinada do thumbnail"),
 	})
 	.openapi("PersonPhotosResponse");
 

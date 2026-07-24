@@ -36,6 +36,12 @@ vi.mock("../../../providers", () => ({
 	S3Singleton: { getInstance: () => ({ send: vi.fn(), bucketName: "b" }) },
 }));
 
+// Assina de forma determinística para inspecionar a chave assinada nos testes.
+vi.mock("@aws-sdk/s3-request-presigner", () => ({
+	getSignedUrl: (_client: unknown, command: { input: { Key: string } }) =>
+		Promise.resolve(`https://signed.example/${command.input.Key}`),
+}));
+
 const VALID_UUID = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
 const PERSON_UUID = "11111111-2222-3333-4444-555555555555";
 const TENANT_ID = "tenant-1";
@@ -90,7 +96,12 @@ describe("GET /albums/{id}/people", () => {
 		);
 
 		expect(res.status).toBe(200);
-		expect((await res.json()).people).toHaveLength(1);
+		const body = await res.json();
+		expect(body.people).toHaveLength(1);
+		// Enriquecido com a URL assinada da capa (a partir da coverKey).
+		expect(body.people[0].coverUrl).toBe(
+			"https://signed.example/uploads/faces/col/p1.jpg",
+		);
 		// `public` é o que faz o CloudFront guardar na borda; `Vary: Authorization`
 		// particiona por credencial em qualquer proxy intermediário.
 		expect(res.headers.get("Cache-Control")).toContain("public");
@@ -112,7 +123,19 @@ describe("GET /albums/{id}/people/{personId}/photos", () => {
 		);
 
 		expect(res.status).toBe(200);
-		expect((await res.json()).images).toEqual(["img-1", "img-2"]);
+		const body = await res.json();
+		expect(body.images).toEqual(["img-1", "img-2"]);
+		// Cada foto ganha a URL assinada do thumbnail da coleção.
+		expect(body.photos).toEqual([
+			{
+				imageId: "img-1",
+				url: `https://signed.example/uploads/thumbnails/${VALID_UUID}/img-1.jpg`,
+			},
+			{
+				imageId: "img-2",
+				url: `https://signed.example/uploads/thumbnails/${VALID_UUID}/img-2.jpg`,
+			},
+		]);
 	});
 
 	it("returns 404 when the person does not exist", async () => {
