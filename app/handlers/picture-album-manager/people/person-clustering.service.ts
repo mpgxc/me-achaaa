@@ -295,7 +295,8 @@ export class PersonClusteringService {
 
 	/**
 	 * Executa o rebuild transicionando o status (running → done/failed). Chamado
-	 * pelo worker da fila. Re-lança em caso de erro para o SQS reprocessar.
+	 * pelo worker da fila. Usa o caminho **incremental** (só as faces novas
+	 * pagam Rekognition); re-lança em caso de erro para o SQS reprocessar.
 	 */
 	async processRebuild(
 		collectionId: string,
@@ -306,7 +307,7 @@ export class PersonClusteringService {
 		});
 
 		try {
-			const summary = await this.rebuild(collectionId);
+			const summary = await this.rebuildIncremental(collectionId);
 
 			await this.setRebuildStatus(collectionId, {
 				status: "done",
@@ -415,9 +416,10 @@ export class PersonClusteringService {
 	// --- construção cara (offline / sob demanda) ----------------------------
 
 	/**
-	 * Reconstrói os clusters de pessoas do álbum: busca os vizinhos de cada face
-	 * no Rekognition, agrupa com union-find e regrava os registros `PERSON#`
-	 * (limpando os antigos antes). Retorna um resumo `{ people, faces }`.
+	 * Rebuild **completo**: busca os vizinhos de TODA face no Rekognition, agrupa
+	 * com union-find e regrava os registros `PERSON#`. Custo O(N) `SearchFaces` —
+	 * use para corrigir drift; o caminho normal é o incremental. Retorna
+	 * `{ people, faces }`.
 	 */
 	async rebuild(
 		collectionId: string,
@@ -438,8 +440,73 @@ export class PersonClusteringService {
 
 		const clusters = clusterFaces(neighbors);
 
-		// Limpa clusters anteriores para não deixar "pessoas" órfãs de um
-		// rebuild passado (ex.: faces removidas por LGPD).
+		await this.materialize(collectionId, clusters, imageOf);
+
+		return { people: clusters.length, faces: faces.length };
+	}
+
+	/**
+	 * Rebuild **incremental**: só as faces ainda não atribuídas a nenhuma pessoa
+	 * pagam `SearchFaces` — os clusters existentes (lidos dos `PERSON#`) são
+	 * preservados como arestas do union-find e as faces novas se juntam a eles
+	 * (ou formam pessoas novas / fundem clusters se fizerem ponte). Corta o custo
+	 * Rekognition de O(N) para O(faces novas). Sem clusters ainda → full rebuild;
+	 * sem faces novas → no-op. Não corrige drift (não separa clusters já unidos).
+	 */
+	async rebuildIncremental(
+		collectionId: string,
+	): Promise<{ people: number; faces: number }> {
+		const faces = await this.listFaceRows(collectionId);
+		const imageOf = new Map(
+			faces.map((face) => [face.FaceId, face.ExternalImageId] as const),
+		);
+
+		const existingClusters = (await this.listPersonRecords(collectionId))
+			.map((record) => record.FaceIds ?? [])
+			.filter((faceIds) => faceIds.length > 0);
+
+		if (existingClusters.length === 0) {
+			return this.rebuild(collectionId); // nunca clusterizado → completo
+		}
+
+		const assigned = new Set(existingClusters.flat());
+		const newFaces = faces.filter((face) => !assigned.has(face.FaceId));
+
+		if (newFaces.length === 0) {
+			return { people: existingClusters.length, faces: faces.length }; // nada novo
+		}
+
+		// Arestas que preservam cada cluster existente (estrela a partir do 1º id).
+		const neighbors: FaceNeighbors[] = existingClusters.map((faceIds) => ({
+			faceId: faceIds[0],
+			neighbors: faceIds.slice(1),
+		}));
+
+		// Só as faces novas pagam SearchFaces.
+		for (const { FaceId } of newFaces) {
+			neighbors.push({
+				faceId: FaceId,
+				neighbors: await this.searchNeighbors(collectionId, FaceId),
+			});
+		}
+
+		const clusters = clusterFaces(neighbors);
+
+		await this.materialize(collectionId, clusters, imageOf);
+
+		return { people: clusters.length, faces: faces.length };
+	}
+
+	/**
+	 * Regrava os `PERSON#` do álbum a partir dos clusters: limpa os antigos (não
+	 * deixa "pessoas" órfãs, ex.: faces removidas por LGPD) e escreve um por
+	 * cluster.
+	 */
+	private async materialize(
+		collectionId: string,
+		clusters: string[][],
+		imageOf: Map<string, string | undefined>,
+	): Promise<void> {
 		await this.clearPeople(collectionId);
 
 		for (const cluster of clusters) {
@@ -448,8 +515,6 @@ export class PersonClusteringService {
 				cluster.map((faceId) => ({ faceId, imageId: imageOf.get(faceId) })),
 			);
 		}
-
-		return { people: clusters.length, faces: faces.length };
 	}
 
 	/**
