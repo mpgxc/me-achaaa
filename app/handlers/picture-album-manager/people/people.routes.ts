@@ -18,9 +18,19 @@ const peopleService = new PersonClusteringService();
 const tenantService = new TenantService();
 
 // Os dados de "pessoas" só mudam num rebuild, então a navegação é cacheável.
-// `private` porque a rota é autenticada por tenant; a camada pública de
-// navegação (CDN) fica na frente disto — ver o diagrama browse × selfie.
-const BROWSE_CACHE_CONTROL = "private, max-age=300";
+// `public` para o CloudFront (`PeopleBrowseDistribution`) guardar na borda; a
+// chave de cache da distribuição inclui `Authorization`/`x-api-key`, então cada
+// tenant tem sua entrada — e `Vary: Authorization` avisa qualquer proxy
+// intermediário a particionar por credencial. As demais rotas (`private`/sem
+// header) não são cacheadas: a distribuição respeita o Cache-Control da origem.
+const BROWSE_CACHE_CONTROL = "public, max-age=300";
+
+const setBrowseCacheHeaders = (ctx: {
+	header: (name: string, value: string) => void;
+}) => {
+	ctx.header("Cache-Control", BROWSE_CACHE_CONTROL);
+	ctx.header("Vary", "Authorization");
+};
 
 peopleManagementRoute.use("*", apiKeyAuth(tenantService));
 
@@ -37,7 +47,7 @@ peopleManagementRoute.openapi(listPeopleRoute, async (ctx) => {
 
 		const people = await peopleService.listPeople(externalClientAlbumId);
 
-		ctx.header("Cache-Control", BROWSE_CACHE_CONTROL);
+		setBrowseCacheHeaders(ctx);
 
 		return ctx.json({ people }, 200);
 	} catch (error) {
@@ -73,7 +83,7 @@ peopleManagementRoute.openapi(listPersonPhotosRoute, async (ctx) => {
 			return ctx.json({ message: "Person not found" }, 404);
 		}
 
-		ctx.header("Cache-Control", BROWSE_CACHE_CONTROL);
+		setBrowseCacheHeaders(ctx);
 
 		return ctx.json(person, 200);
 	} catch (error) {
