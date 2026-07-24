@@ -136,6 +136,7 @@ functions:
       DYNAMO_TABLE_NAME: !Ref RekognitionBucketAssetsControll
       S3_BUCKET_NAME: !Ref FaceRecognitionBucket
       NOTIFICATION_QUEUE: !Ref NotificationQueue
+      PERSON_REBUILD_QUEUE: !Ref PersonRebuildQueue
 
   ImageThumbnailGenerator:
     handler: build/handlers/image-thumbnail-generator.handler

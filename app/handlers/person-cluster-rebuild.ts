@@ -17,9 +17,19 @@ export const handler = async ({
 
 	for (const { body, messageId } of Records) {
 		try {
-			const { collectionId } = JSON.parse(body) as { collectionId: string };
+			const { collectionId, mode, token } = JSON.parse(body) as {
+				collectionId: string;
+				mode?: string;
+				token?: string;
+			};
 
-			await peopleService.processRebuild(collectionId);
+			// "auto" passa pelo debounce (só roda se o token ainda for o vigente);
+			// o rebuild manual (sem mode) sempre roda.
+			if (mode === "auto" && token) {
+				await peopleService.runAutoRebuild(collectionId, token);
+			} else {
+				await peopleService.processRebuild(collectionId);
+			}
 		} catch (error) {
 			console.error(
 				`PersonClusterRebuild: falha ao processar ${messageId}: ${
