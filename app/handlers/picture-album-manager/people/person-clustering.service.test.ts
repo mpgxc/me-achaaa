@@ -1,6 +1,10 @@
 import { marshall } from "@aws-sdk/util-dynamodb";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { DynamoSingleton, RekognitionSingleton } from "../../../providers";
+import type {
+	DynamoSingleton,
+	RekognitionSingleton,
+	SqsSingleton,
+} from "../../../providers";
 import {
 	PersonClusteringService,
 	clusterFaces,
@@ -9,6 +13,9 @@ import {
 vi.mock("../../../providers", () => ({
 	DynamoSingleton: { getInstance: () => ({ send: vi.fn(), tableName: "t" }) },
 	RekognitionSingleton: { getInstance: () => ({ send: vi.fn() }) },
+	SqsSingleton: {
+		getInstance: () => ({ send: vi.fn(), queueUrl: { PERSON_REBUILD: "url" } }),
+	},
 }));
 
 describe("clusterFaces", () => {
@@ -62,6 +69,7 @@ describe("clusterFaces", () => {
 describe("PersonClusteringService", () => {
 	const dynamoSend = vi.fn();
 	const rekognitionSend = vi.fn();
+	const sqsSend = vi.fn();
 	let service: PersonClusteringService;
 
 	beforeEach(() => {
@@ -69,6 +77,10 @@ describe("PersonClusteringService", () => {
 		service = new PersonClusteringService(
 			{ send: dynamoSend, tableName: "t" } as unknown as DynamoSingleton,
 			{ send: rekognitionSend } as unknown as RekognitionSingleton,
+			{
+				send: sqsSend,
+				queueUrl: { PERSON_REBUILD: "queue-url" },
+			} as unknown as SqsSingleton,
 		);
 	});
 
@@ -247,6 +259,110 @@ describe("PersonClusteringService", () => {
 			expect(await service.removeFace("col", "nope")).toBe(false);
 			expect(commandsOf("DeleteItemCommand")).toHaveLength(0);
 			expect(commandsOf("PutItemCommand")).toHaveLength(0);
+		});
+	});
+
+	describe("requestRebuild", () => {
+		it("marks the status queued and publishes to the queue", async () => {
+			dynamoSend.mockResolvedValue({});
+			sqsSend.mockResolvedValue({});
+
+			await service.requestRebuild("col");
+
+			const statusPut = dynamoSend.mock.calls
+				.map(([command]) => command)
+				.find(
+					(command) => command.input.Item?.SK?.S === "PERSONREBUILD#STATUS",
+				);
+			expect(statusPut.input.Item.status.S).toBe("queued");
+
+			const message = sqsSend.mock.calls[0][0];
+			expect(message.input.QueueUrl).toBe("queue-url");
+			expect(JSON.parse(message.input.MessageBody)).toEqual({
+				collectionId: "col",
+			});
+		});
+
+		it("throws when the queue is not configured", async () => {
+			const svc = new PersonClusteringService(
+				{ send: dynamoSend, tableName: "t" } as unknown as DynamoSingleton,
+				{ send: rekognitionSend } as unknown as RekognitionSingleton,
+				{ send: sqsSend, queueUrl: {} } as unknown as SqsSingleton,
+			);
+
+			await expect(svc.requestRebuild("col")).rejects.toThrow();
+			expect(sqsSend).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("getRebuildStatus", () => {
+		it("returns the stored status without the key attributes", async () => {
+			dynamoSend.mockResolvedValue({
+				Item: marshall({
+					PK: "ALBUM#col",
+					SK: "PERSONREBUILD#STATUS",
+					status: "done",
+					people: 3,
+					faces: 7,
+				}),
+			});
+
+			expect(await service.getRebuildStatus("col")).toEqual({
+				status: "done",
+				people: 3,
+				faces: 7,
+			});
+		});
+
+		it("returns null when there is no status yet", async () => {
+			dynamoSend.mockResolvedValue({ Item: undefined });
+
+			expect(await service.getRebuildStatus("col")).toBeNull();
+		});
+	});
+
+	describe("processRebuild", () => {
+		it("transitions running → done and stores the counts", async () => {
+			// Sem faces: rebuild resolve rápido com { people: 0, faces: 0 }.
+			dynamoSend.mockResolvedValue({ Items: [] });
+
+			const summary = await service.processRebuild("col");
+
+			expect(summary).toEqual({ people: 0, faces: 0 });
+
+			const statuses = dynamoSend.mock.calls
+				.map(([command]) => command)
+				.filter(
+					(command) => command.input.Item?.SK?.S === "PERSONREBUILD#STATUS",
+				)
+				.map((command) => command.input.Item.status.S);
+
+			expect(statuses).toEqual(["running", "done"]);
+		});
+
+		it("marks the status failed and rethrows on error", async () => {
+			dynamoSend.mockImplementation((command) => {
+				// A leitura das faces falha → rebuild lança.
+				if (command.constructor.name === "QueryCommand") {
+					return Promise.reject(new Error("dynamo down"));
+				}
+
+				return Promise.resolve({});
+			});
+
+			await expect(service.processRebuild("col")).rejects.toThrow(
+				"dynamo down",
+			);
+
+			const lastStatus = dynamoSend.mock.calls
+				.map(([command]) => command)
+				.filter(
+					(command) => command.input.Item?.SK?.S === "PERSONREBUILD#STATUS",
+				)
+				.map((command) => command.input.Item.status.S)
+				.at(-1);
+
+			expect(lastStatus).toBe("failed");
 		});
 	});
 });

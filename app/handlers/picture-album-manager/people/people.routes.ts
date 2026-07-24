@@ -7,6 +7,7 @@ import {
 	listPeopleRoute,
 	listPersonPhotosRoute,
 	rebuildPeopleRoute,
+	rebuildStatusRoute,
 } from "./people.openapi";
 import { PersonClusteringService } from "./person-clustering.service";
 
@@ -99,15 +100,44 @@ peopleManagementRoute.openapi(rebuildPeopleRoute, async (ctx) => {
 			return ctx.json({ message: "Album not found" }, 404);
 		}
 
-		const summary = await peopleService.rebuild(externalClientAlbumId);
+		// Enfileira e responde 202: o rebuild (O(N) SearchFaces) roda no worker,
+		// senão estouraria o timeout do API Gateway em álbuns grandes.
+		await peopleService.requestRebuild(externalClientAlbumId);
 
-		return ctx.json(summary, 200);
+		return ctx.json({ status: "queued" as const }, 202);
 	} catch (error) {
-		console.error("Error rebuilding people:", error);
+		console.error("Error requesting people rebuild:", error);
 
 		return ctx.json(
 			{
-				message: "Failed to rebuild people",
+				message: "Failed to request people rebuild",
+				error: error instanceof Error ? error.message : String(error),
+			},
+			500,
+		);
+	}
+});
+
+peopleManagementRoute.openapi(rebuildStatusRoute, async (ctx) => {
+	const { externalClientAlbumId } = ctx.req.param();
+	const tenant = ctx.get("tenant");
+
+	try {
+		const album = await albumService.getAlbum(externalClientAlbumId);
+
+		if (!album || album.tenantId !== tenant.id) {
+			return ctx.json({ message: "Album not found" }, 404);
+		}
+
+		const status = await peopleService.getRebuildStatus(externalClientAlbumId);
+
+		return ctx.json(status ?? { status: "idle" as const }, 200);
+	} catch (error) {
+		console.error("Error fetching rebuild status:", error);
+
+		return ctx.json(
+			{
+				message: "Failed to fetch rebuild status",
 				error: error instanceof Error ? error.message : String(error),
 			},
 			500,

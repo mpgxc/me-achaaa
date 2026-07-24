@@ -85,7 +85,8 @@ Tabela `...-rekognition-bucket-assets-controll`, chaves `PK`/`SK`, com um GSI `S
 | Face | `ALBUM#{id}` | `FACE#{faceId}` | `Confidence`, `ExternalImageId` |
 | Tenant | `TENANT#{id}` | `METADATA` | `WebhookUrl` opcional |
 | API key | `APIKEY#{sha256(key)}` | `METADATA` | mapeia para `TenantId` (só o hash) |
-| Pessoa | `ALBUM#{id}` | `PERSON#{personId}` | cluster de faces (browse-by-person); `FaceIds`, `Images`, `CoverKey` |
+| Pessoa | `ALBUM#{id}` | `PERSON#{personId}` | cluster de faces (browse-by-person); `FaceIds`, `Faces`, `Images`, `CoverKey` |
+| Status de rebuild | `ALBUM#{id}` | `PERSONREBUILD#STATUS` | estado do rebuild assíncrono de clusters |
 | Cache de busca | `SEARCHCACHE#{id}` | `HASH#{sha256(image)}` | resultado de `/search`; expira por TTL (`ExpiresAt`) |
 
 **Identidade unificada:** `externalClientAlbumId` == `CollectionId` do Rekognition == a partição do álbum — todos o mesmo UUID.
@@ -107,7 +108,8 @@ Tabela `...-rekognition-bucket-assets-controll`, chaves `PK`/`SK`, com um GSI `S
 | `POST` | `/albums/{id}/upload-url` | URL S3 pré-assinada para upload |
 | `GET` | `/albums/{id}/people` | **Navegar por pessoa** — lista os clusters (cacheável) |
 | `GET` | `/albums/{id}/people/{personId}/photos` | Fotos de uma pessoa (cacheável) |
-| `POST` | `/albums/{id}/people/rebuild` | Reconstrói os clusters (offline, paga Rekognition) |
+| `POST` | `/albums/{id}/people/rebuild` | Enfileira o rebuild dos clusters (assíncrono, **202**; paga Rekognition no worker) |
+| `GET` | `/albums/{id}/people/rebuild/status` | Status do último rebuild (`queued`/`running`/`done`/`failed`/`idle`) |
 | `POST` | `/search` | Busca por imagem — selfie (header `x-collection-id`, body `{ image }` base64; com cache de resultado) |
 | `POST` | `/search/by-face-id` | Busca por `faceId` (header `x-collection-id`, body `{ faceId }`) |
 

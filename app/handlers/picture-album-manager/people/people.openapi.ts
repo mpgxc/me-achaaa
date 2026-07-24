@@ -4,7 +4,8 @@ import {
 	ListPeopleResponse,
 	PersonParam,
 	PersonPhotosResponse,
-	RebuildPeopleResponse,
+	RebuildQueuedResponse,
+	RebuildStatusResponse,
 } from "./people.schemas";
 
 export const listPeopleRoute = createRoute({
@@ -101,11 +102,54 @@ export const rebuildPeopleRoute = createRoute({
 		params: AlbumIdParam,
 	},
 	responses: {
-		200: {
-			description: "Clusters de pessoas reconstruídos",
+		202: {
+			description: "Rebuild enfileirado (roda de forma assíncrona)",
 			content: {
 				"application/json": {
-					schema: RebuildPeopleResponse,
+					schema: RebuildQueuedResponse,
+				},
+			},
+		},
+		401: {
+			description: "API key ausente ou inválida",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+		404: {
+			description: "Coleção não encontrada para o tenant autenticado",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+		500: {
+			description: "Erro interno",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
+				},
+			},
+		},
+	},
+});
+
+export const rebuildStatusRoute = createRoute({
+	tags: ["People"],
+	path: "/albums/{externalClientAlbumId}/people/rebuild/status",
+	method: "get",
+	request: {
+		params: AlbumIdParam,
+	},
+	responses: {
+		200: {
+			description: "Status do último rebuild (idle se nunca rodou)",
+			content: {
+				"application/json": {
+					schema: RebuildStatusResponse,
 				},
 			},
 		},
