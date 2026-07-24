@@ -180,6 +180,91 @@ describe("PersonClusteringService", () => {
 		});
 	});
 
+	describe("rebuildIncremental", () => {
+		// Distingue as queries por prefixo de SK e nomeia os comandos por tipo.
+		const wire = (opts: {
+			faces: { FaceId: string; ExternalImageId?: string }[];
+			people: { PersonId: string; FaceIds: string[] }[];
+		}) => {
+			dynamoSend.mockImplementation((command) => {
+				const sk = command.input.ExpressionAttributeValues?.[":sk"]?.S;
+
+				if (command.constructor.name === "QueryCommand" && sk === "FACE#") {
+					return Promise.resolve({
+						Items: opts.faces.map((face) => marshall(face)),
+					});
+				}
+
+				if (command.constructor.name === "QueryCommand" && sk === "PERSON#") {
+					return Promise.resolve({
+						Items: opts.people.map((person) =>
+							marshall({
+								PK: "ALBUM#col",
+								SK: `PERSON#${person.PersonId}`,
+								PersonId: person.PersonId,
+								FaceIds: person.FaceIds,
+							}),
+						),
+					});
+				}
+
+				return Promise.resolve({});
+			});
+		};
+
+		it("falls back to a full rebuild when nothing was clustered yet", async () => {
+			wire({ faces: [{ FaceId: "f1", ExternalImageId: "img-1" }], people: [] });
+			rekognitionSend.mockResolvedValue({ FaceMatches: [] });
+
+			const summary = await service.rebuildIncremental("col");
+
+			expect(summary).toEqual({ people: 1, faces: 1 });
+			expect(rekognitionSend).toHaveBeenCalledTimes(1); // full: busca a única face
+		});
+
+		it("no-ops (no Rekognition) when there are no new faces", async () => {
+			wire({
+				faces: [
+					{ FaceId: "f1", ExternalImageId: "img-1" },
+					{ FaceId: "f2", ExternalImageId: "img-2" },
+				],
+				people: [{ PersonId: "f1", FaceIds: ["f1", "f2"] }],
+			});
+
+			const summary = await service.rebuildIncremental("col");
+
+			expect(summary).toEqual({ people: 1, faces: 2 });
+			expect(rekognitionSend).not.toHaveBeenCalled();
+		});
+
+		it("only searches the new face and joins it to the existing cluster", async () => {
+			wire({
+				faces: [
+					{ FaceId: "f1", ExternalImageId: "img-1" },
+					{ FaceId: "f2", ExternalImageId: "img-2" },
+					{ FaceId: "f3", ExternalImageId: "img-3" },
+				],
+				people: [{ PersonId: "f1", FaceIds: ["f1", "f2"] }],
+			});
+			// f3 casa com f2 → entra no cluster {f1,f2}.
+			rekognitionSend.mockResolvedValue({
+				FaceMatches: [{ Face: { FaceId: "f2" } }],
+			});
+
+			const summary = await service.rebuildIncremental("col");
+
+			// Só f3 (a face nova) pagou SearchFaces — não as 3.
+			expect(rekognitionSend).toHaveBeenCalledTimes(1);
+			expect(summary).toEqual({ people: 1, faces: 3 });
+
+			const put = dynamoSend.mock.calls
+				.map(([command]) => command)
+				.find((command) => command.input.Item?.SK?.S?.startsWith("PERSON#"));
+			expect(put.input.Item.SK.S).toBe("PERSON#f1");
+			expect(put.input.Item.FaceCount.N).toBe("3");
+		});
+	});
+
 	describe("removeFace", () => {
 		const personRecord = (faces: { faceId: string; imageId?: string }[]) =>
 			marshall(
