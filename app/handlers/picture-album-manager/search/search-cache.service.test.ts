@@ -90,4 +90,45 @@ describe("SearchCacheService", () => {
 			);
 		});
 	});
+
+	describe("invalidate", () => {
+		it("deletes every cache entry of the collection", async () => {
+			mockDynamoSend.mockImplementation((command) => {
+				if (command.constructor.name === "QueryCommand") {
+					return Promise.resolve({
+						Items: [
+							marshall({ PK: "SEARCHCACHE#col", SK: "HASH#a" }),
+							marshall({ PK: "SEARCHCACHE#col", SK: "HASH#b" }),
+						],
+					});
+				}
+
+				return Promise.resolve({});
+			});
+
+			await cache.invalidate("col");
+
+			const deletes = mockDynamoSend.mock.calls
+				.map(([command]) => command)
+				.filter((command) => command.constructor.name === "DeleteItemCommand");
+
+			expect(deletes).toHaveLength(2);
+			expect(deletes.map((command) => command.input.Key.SK.S).sort()).toEqual([
+				"HASH#a",
+				"HASH#b",
+			]);
+		});
+
+		it("no-ops when there is nothing cached", async () => {
+			mockDynamoSend.mockResolvedValue({ Items: [] });
+
+			await cache.invalidate("col");
+
+			const deletes = mockDynamoSend.mock.calls
+				.map(([command]) => command)
+				.filter((command) => command.constructor.name === "DeleteItemCommand");
+
+			expect(deletes).toHaveLength(0);
+		});
+	});
 });

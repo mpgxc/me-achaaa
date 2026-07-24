@@ -6,6 +6,7 @@ import { S3Singleton } from "../../providers";
 import { apiKeyAuth } from "./auth/auth.middleware";
 import { TenantService } from "./auth/tenant.service";
 import type { AppEnv } from "./auth/types";
+import { PersonClusteringService } from "./people/person-clustering.service";
 import { PictureAlbumManagementService } from "./picture-album-management.service";
 import {
 	deleteAlbumFaceRoute,
@@ -15,11 +16,14 @@ import {
 	listAlbumFacesRoute,
 	registerAlbumRoute,
 } from "./picture-album-manager.openapi";
+import { SearchCacheService } from "./search/search-cache.service";
 
 export const pictureAlbumManagementRoute = new OpenAPIHono<AppEnv>();
 
 const albumManagementService = new PictureAlbumManagementService();
 const tenantService = new TenantService();
+const cacheService = new SearchCacheService();
+const peopleService = new PersonClusteringService();
 const s3Client = S3Singleton.getInstance();
 
 const PRESIGNED_URL_EXPIRES_IN_SECONDS = 300; // 5 minutes
@@ -216,6 +220,24 @@ pictureAlbumManagementRoute.openapi(deleteAlbumFaceRoute, async (ctx) => {
 
 		if (!deleted) {
 			return ctx.json({ message: "Face not found" }, 404);
+		}
+
+		// LGPD: a face já saiu do Rekognition/S3/Dynamo — agora limpa os dados
+		// derivados (cache de busca + clusters) para ela parar de aparecer.
+		// Best-effort: o esquecimento em si já foi feito, então uma falha aqui
+		// (com o TTL do cache como rede de segurança) não deve reverter o 200.
+		const cleanup = await Promise.allSettled([
+			cacheService.invalidate(externalClientAlbumId),
+			peopleService.removeFace(externalClientAlbumId, faceId),
+		]);
+
+		for (const result of cleanup) {
+			if (result.status === "rejected") {
+				console.error(
+					"Erasure: falha ao limpar dados derivados da face:",
+					result.reason,
+				);
+			}
 		}
 
 		return ctx.json({ message: "Face deleted" }, 200);
