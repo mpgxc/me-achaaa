@@ -91,7 +91,11 @@ describe("GET /albums/{id}/people", () => {
 
 		expect(res.status).toBe(200);
 		expect((await res.json()).people).toHaveLength(1);
+		// `public` é o que faz o CloudFront guardar na borda; `Vary: Authorization`
+		// particiona por credencial em qualquer proxy intermediário.
+		expect(res.headers.get("Cache-Control")).toContain("public");
 		expect(res.headers.get("Cache-Control")).toContain("max-age");
+		expect(res.headers.get("Vary")).toBe("Authorization");
 	});
 });
 

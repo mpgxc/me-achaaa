@@ -426,4 +426,87 @@ resources:
             Projection:
               ProjectionType: ALL
 
+    # CDN da navegação por pessoa (browse-by-person). Fica na frente da API
+    # inteira, mas a cacheabilidade é dirigida pelo Cache-Control da ORIGEM:
+    # como MinTTL/DefaultTTL = 0, só as respostas GET /people* (que enviam
+    # `public, max-age=300`) são guardadas; as demais rotas (`private`/sem
+    # header) e todo POST/DELETE passam direto. A chave de cache inclui
+    # Authorization/x-api-key, então cada tenant tem sua entrada.
+    PeopleBrowseCachePolicy:
+      Type: AWS::CloudFront::CachePolicy
+      Properties:
+        CachePolicyConfig:
+          Name: ${self:service}-${self:provider.stage}-people-browse
+          Comment: Origin-driven cache; key partitioned by API credential
+          MinTTL: 0
+          DefaultTTL: 0
+          MaxTTL: 3600
+          ParametersInCacheKeyAndForwardedToOrigin:
+            EnableAcceptEncodingGzip: true
+            EnableAcceptEncodingBrotli: true
+            CookiesConfig:
+              CookieBehavior: none
+            HeadersConfig:
+              HeaderBehavior: whitelist
+              Headers:
+                - Authorization
+                - x-api-key
+                - x-collection-id
+            QueryStringsConfig:
+              QueryStringBehavior: all
+
+    PeopleBrowseOriginRequestPolicy:
+      Type: AWS::CloudFront::OriginRequestPolicy
+      Properties:
+        OriginRequestPolicyConfig:
+          Name: ${self:service}-${self:provider.stage}-people-browse-origin
+          CookiesConfig:
+            CookieBehavior: none
+          HeadersConfig:
+            HeaderBehavior: whitelist
+            Headers:
+              - Authorization
+              - x-api-key
+              - x-collection-id
+          QueryStringsConfig:
+            QueryStringBehavior: all
+
+    PeopleBrowseDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Enabled: true
+          Comment: ${self:service}-${self:provider.stage} browse-by-person cache
+          HttpVersion: http2and3
+          PriceClass: PriceClass_100
+          Origins:
+            - Id: httpApiOrigin
+              DomainName: !Sub "${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+              CustomOriginConfig:
+                OriginProtocolPolicy: https-only
+                OriginSSLProtocols:
+                  - TLSv1.2
+          DefaultCacheBehavior:
+            TargetOriginId: httpApiOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            Compress: true
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - POST
+              - PATCH
+              - DELETE
+            CachedMethods:
+              - GET
+              - HEAD
+            CachePolicyId: !Ref PeopleBrowseCachePolicy
+            OriginRequestPolicyId: !Ref PeopleBrowseOriginRequestPolicy
+
+  Outputs:
+    PeopleBrowseCdnDomain:
+      Description: Domínio do CloudFront para a navegação por pessoa (browse-by-person)
+      Value: !GetAtt PeopleBrowseDistribution.DomainName
+
 package: ${file(package.yml):package}
