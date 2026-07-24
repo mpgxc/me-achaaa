@@ -10,13 +10,15 @@ vi.mock("../picture-album-management.service", () => ({
 
 const mockListPeople = vi.fn();
 const mockGetPersonPhotos = vi.fn();
-const mockRebuild = vi.fn();
+const mockRequestRebuild = vi.fn();
+const mockGetRebuildStatus = vi.fn();
 
 vi.mock("./person-clustering.service", () => ({
 	PersonClusteringService: class {
 		listPeople = mockListPeople;
 		getPersonPhotos = mockGetPersonPhotos;
-		rebuild = mockRebuild;
+		requestRebuild = mockRequestRebuild;
+		getRebuildStatus = mockGetRebuildStatus;
 	},
 }));
 
@@ -122,16 +124,17 @@ describe("GET /albums/{id}/people/{personId}/photos", () => {
 });
 
 describe("POST /albums/{id}/people/rebuild", () => {
-	it("returns 200 with the rebuild summary", async () => {
-		mockRebuild.mockResolvedValue({ people: 2, faces: 5 });
+	it("returns 202 and enqueues the rebuild (does not run it inline)", async () => {
+		mockRequestRebuild.mockResolvedValue(undefined);
 
 		const res = await peopleManagementRoute.request(
 			`/albums/${VALID_UUID}/people/rebuild`,
 			{ method: "POST", headers },
 		);
 
-		expect(res.status).toBe(200);
-		expect(await res.json()).toEqual({ people: 2, faces: 5 });
+		expect(res.status).toBe(202);
+		expect(await res.json()).toEqual({ status: "queued" });
+		expect(mockRequestRebuild).toHaveBeenCalledWith(VALID_UUID);
 	});
 
 	it("returns 404 when the album belongs to another tenant", async () => {
@@ -143,6 +146,36 @@ describe("POST /albums/{id}/people/rebuild", () => {
 		);
 
 		expect(res.status).toBe(404);
-		expect(mockRebuild).not.toHaveBeenCalled();
+		expect(mockRequestRebuild).not.toHaveBeenCalled();
+	});
+});
+
+describe("GET /albums/{id}/people/rebuild/status", () => {
+	it("returns the stored status", async () => {
+		mockGetRebuildStatus.mockResolvedValue({
+			status: "done",
+			people: 2,
+			faces: 5,
+		});
+
+		const res = await peopleManagementRoute.request(
+			`/albums/${VALID_UUID}/people/rebuild/status`,
+			{ headers },
+		);
+
+		expect(res.status).toBe(200);
+		expect((await res.json()).status).toBe("done");
+	});
+
+	it("returns idle when no rebuild has run yet", async () => {
+		mockGetRebuildStatus.mockResolvedValue(null);
+
+		const res = await peopleManagementRoute.request(
+			`/albums/${VALID_UUID}/people/rebuild/status`,
+			{ headers },
+		);
+
+		expect(res.status).toBe(200);
+		expect((await res.json()).status).toBe("idle");
 	});
 });

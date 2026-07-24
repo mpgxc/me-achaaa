@@ -6,14 +6,22 @@ import {
 	QueryCommand,
 } from "@aws-sdk/client-dynamodb";
 import { SearchFacesCommand } from "@aws-sdk/client-rekognition";
+import { SendMessageCommand } from "@aws-sdk/client-sqs";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
-import { DynamoSingleton, RekognitionSingleton } from "../../../providers";
+import {
+	DynamoSingleton,
+	RekognitionSingleton,
+	SqsSingleton,
+} from "../../../providers";
 
 // Limiar alto para agrupar faces da MESMA pessoa. Baixo demais funde pessoas
 // diferentes num único cluster; 99 prioriza precisão sobre recall — é melhor
 // dividir a mesma pessoa em duas do que juntar duas pessoas numa só.
 const PERSON_MATCH_THRESHOLD = 99;
 const MAX_FACES_PER_SEARCH = 100;
+
+// Uma linha de status por álbum, atualizada ao longo do rebuild assíncrono.
+const REBUILD_STATUS_SK = "PERSONREBUILD#STATUS";
 
 const coverKeyFor = (collectionId: string, faceId: string): string =>
 	`uploads/faces/${collectionId}/${faceId}.jpg`;
@@ -122,6 +130,16 @@ export type PersonPhotos = {
 	images: string[];
 };
 
+export type RebuildStatus = {
+	status: "queued" | "running" | "done" | "failed";
+	queuedAt?: string;
+	startedAt?: string;
+	finishedAt?: string;
+	people?: number;
+	faces?: number;
+	error?: string;
+};
+
 /**
  * Materializa e serve "pessoas" de um álbum. O caminho de LEITURA
  * (`listPeople` / `getPersonPhotos`) é barato e cacheável — lê o que já foi
@@ -135,7 +153,109 @@ export class PersonClusteringService {
 	constructor(
 		private dynamo = DynamoSingleton.getInstance(),
 		private rekognition = RekognitionSingleton.getInstance(),
+		private sqs = SqsSingleton.getInstance(),
 	) {}
+
+	// --- enfileiramento assíncrono (o rebuild é caro demais p/ o request) ----
+
+	/**
+	 * Enfileira um rebuild para rodar fora do request. O rebuild é O(N)
+	 * `SearchFaces` (um por face) e estoura o limite de ~29s do API Gateway em
+	 * álbuns grandes — então a rota só publica na fila e devolve 202; o worker
+	 * (`person-cluster-rebuild`) processa. Grava o status `queued` para polling.
+	 */
+	async requestRebuild(collectionId: string): Promise<void> {
+		const queueUrl = this.sqs.queueUrl.PERSON_REBUILD;
+
+		if (!queueUrl) {
+			throw new Error("PERSON_REBUILD_QUEUE não configurada");
+		}
+
+		await this.setRebuildStatus(collectionId, {
+			status: "queued",
+			queuedAt: new Date().toISOString(),
+		});
+
+		await this.sqs.send(
+			new SendMessageCommand({
+				QueueUrl: queueUrl,
+				MessageBody: JSON.stringify({ collectionId }),
+			}),
+		);
+	}
+
+	async getRebuildStatus(collectionId: string): Promise<RebuildStatus | null> {
+		const { Item } = await this.dynamo.send(
+			new GetItemCommand({
+				TableName: this.dynamo.tableName,
+				Key: marshall({
+					PK: `ALBUM#${collectionId}`,
+					SK: REBUILD_STATUS_SK,
+				}),
+			}),
+		);
+
+		if (!Item) {
+			return null;
+		}
+
+		const { PK: _pk, SK: _sk, ...status } = unmarshall(Item);
+
+		return status as RebuildStatus;
+	}
+
+	/**
+	 * Executa o rebuild transicionando o status (running → done/failed). Chamado
+	 * pelo worker da fila. Re-lança em caso de erro para o SQS reprocessar.
+	 */
+	async processRebuild(
+		collectionId: string,
+	): Promise<{ people: number; faces: number }> {
+		await this.setRebuildStatus(collectionId, {
+			status: "running",
+			startedAt: new Date().toISOString(),
+		});
+
+		try {
+			const summary = await this.rebuild(collectionId);
+
+			await this.setRebuildStatus(collectionId, {
+				status: "done",
+				finishedAt: new Date().toISOString(),
+				people: summary.people,
+				faces: summary.faces,
+			});
+
+			return summary;
+		} catch (error) {
+			await this.setRebuildStatus(collectionId, {
+				status: "failed",
+				finishedAt: new Date().toISOString(),
+				error: error instanceof Error ? error.message : String(error),
+			});
+
+			throw error;
+		}
+	}
+
+	private async setRebuildStatus(
+		collectionId: string,
+		status: RebuildStatus,
+	): Promise<void> {
+		await this.dynamo.send(
+			new PutItemCommand({
+				TableName: this.dynamo.tableName,
+				Item: marshall(
+					{
+						PK: `ALBUM#${collectionId}`,
+						SK: REBUILD_STATUS_SK,
+						...status,
+					},
+					{ removeUndefinedValues: true },
+				),
+			}),
+		);
+	}
 
 	// --- leitura barata (cacheável / CDN) -----------------------------------
 

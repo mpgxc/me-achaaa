@@ -71,6 +71,7 @@ provider:
         - !GetAtt ImageExtractFaceQueue.Arn
         - !GetAtt ImageGenerateThumbnailQueue.Arn
         - !GetAtt NotificationQueue.Arn
+        - !GetAtt PersonRebuildQueue.Arn
 
 custom:
   defaultStage: dev
@@ -182,6 +183,18 @@ functions:
           path: /albums/{externalClientAlbumId}/upload-url
           method: POST
       - httpApi:
+          path: /albums/{externalClientAlbumId}/people
+          method: GET
+      - httpApi:
+          path: /albums/{externalClientAlbumId}/people/rebuild
+          method: POST
+      - httpApi:
+          path: /albums/{externalClientAlbumId}/people/rebuild/status
+          method: GET
+      - httpApi:
+          path: /albums/{externalClientAlbumId}/people/{personId}/photos
+          method: GET
+      - httpApi:
           path: /search
           method: POST
       - httpApi:
@@ -192,6 +205,7 @@ functions:
       S3_BUCKET_NAME: !Ref FaceRecognitionBucket
       REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
       ADMIN_API_KEY: ${env:ADMIN_API_KEY, ''}
+      PERSON_REBUILD_QUEUE: !Ref PersonRebuildQueue
 
   FailureNotification:
     handler: build/handlers/failure-notification.handler
@@ -212,6 +226,9 @@ functions:
       - sqs:
           arn: !GetAtt NotificationQueueDLQ.Arn
           batchSize: 1
+      - sqs:
+          arn: !GetAtt PersonRebuildQueueDLQ.Arn
+          batchSize: 1
     environment:
       DISCORD_WEBHOOK_URL: ${env:DISCORD_WEBHOOK_URL, ''}
 
@@ -229,6 +246,21 @@ functions:
           functionResponseType: ReportBatchItemFailures
     environment:
       DYNAMO_TABLE_NAME: !Ref RekognitionBucketAssetsControll
+
+  PersonClusterRebuild:
+    handler: build/handlers/person-cluster-rebuild.handler
+    memorySize: 256
+    timeout: 900 # 15 min — rebuild é O(N) SearchFaces; roda fora do request
+    description: Rebuilds person clusters (browse-by-person) asynchronously
+    maximumRetryAttempts: 0
+    events:
+      - sqs:
+          arn: !GetAtt PersonRebuildQueue.Arn
+          batchSize: 1
+          functionResponseType: ReportBatchItemFailures
+    environment:
+      DYNAMO_TABLE_NAME: !Ref RekognitionBucketAssetsControll
+      REKOGNITION_COLLECTION: ${self:custom.REKOGNITION_COLLECTION}
 
 resources:
   Resources:
@@ -326,6 +358,23 @@ resources:
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-notification-queue-dlq
         VisibilityTimeout: 60
+
+    PersonRebuildQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-person-rebuild-queue
+        # > timeout do worker (900s) para o SQS não reentregar antes de terminar
+        VisibilityTimeout: 960
+        ReceiveMessageWaitTimeSeconds: 20
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt PersonRebuildQueueDLQ.Arn
+          maxReceiveCount: 3
+
+    PersonRebuildQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-person-rebuild-queue-dlq
+        VisibilityTimeout: 960
 
     FaceRecognitionQueuePolicy:
       Type: AWS::SQS::QueuePolicy

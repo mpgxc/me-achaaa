@@ -23,12 +23,23 @@ export const PersonPhotosResponse = z
 	})
 	.openapi("PersonPhotosResponse");
 
-export const RebuildPeopleResponse = z
+export const RebuildQueuedResponse = z
 	.object({
-		people: z.number(),
-		faces: z.number(),
+		status: z.literal("queued"),
 	})
-	.openapi("RebuildPeopleResponse");
+	.openapi("RebuildQueuedResponse");
+
+export const RebuildStatusResponse = z
+	.object({
+		status: z.enum(["idle", "queued", "running", "done", "failed"]),
+		queuedAt: z.string().optional(),
+		startedAt: z.string().optional(),
+		finishedAt: z.string().optional(),
+		people: z.number().optional(),
+		faces: z.number().optional(),
+		error: z.string().optional(),
+	})
+	.openapi("RebuildStatusResponse");
 
 export const PersonParam = z.object({
 	externalClientAlbumId: z.string().uuid(),
