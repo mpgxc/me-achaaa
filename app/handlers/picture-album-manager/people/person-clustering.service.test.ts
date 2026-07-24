@@ -84,6 +84,21 @@ describe("PersonClusteringService", () => {
 		);
 	});
 
+	// materialize() grava os PERSON# via TransactWriteItems (atômico). Extrai os
+	// itens `Put` de PERSON# de todas as transações enviadas.
+	const transactPersonPuts = () =>
+		dynamoSend.mock.calls
+			.map(([command]) => command)
+			.filter(
+				(command) => command.constructor.name === "TransactWriteItemsCommand",
+			)
+			.flatMap((command) => command.input.TransactItems ?? [])
+			.map(
+				(item: { Put?: { Item?: Record<string, { S?: string }> } }) =>
+					item.Put?.Item,
+			)
+			.filter((item) => item?.SK?.S?.startsWith("PERSON#"));
+
 	describe("listPeople", () => {
 		it("maps PERSON# records to lightweight summaries", async () => {
 			dynamoSend.mockResolvedValue({
@@ -169,14 +184,51 @@ describe("PersonClusteringService", () => {
 			expect(summary).toEqual({ people: 1, faces: 2 });
 
 			// Grava exatamente uma pessoa, com capa = menor faceId e as 2 imagens.
-			const put = dynamoSend.mock.calls
-				.map(([command]) => command)
-				.find((command) => command.input.Item?.SK?.S?.startsWith("PERSON#"));
+			const puts = transactPersonPuts();
+			expect(puts).toHaveLength(1);
+			expect(puts[0].SK.S).toBe("PERSON#f1");
+			expect(puts[0].CoverKey.S).toBe("uploads/faces/col/f1.jpg");
+			expect(puts[0].PhotoCount.N).toBe("2");
+			expect(puts[0].FaceCount.N).toBe("2");
+		});
 
-			expect(put.input.Item.SK.S).toBe("PERSON#f1");
-			expect(put.input.Item.CoverKey.S).toBe("uploads/faces/col/f1.jpg");
-			expect(put.input.Item.PhotoCount.N).toBe("2");
-			expect(put.input.Item.FaceCount.N).toBe("2");
+		it("atomically deletes vanished people and upserts survivors (no clear-all)", async () => {
+			dynamoSend.mockImplementation((command) => {
+				const sk = command.input.ExpressionAttributeValues?.[":sk"]?.S;
+
+				if (sk === "FACE#") {
+					return Promise.resolve({
+						Items: [marshall({ FaceId: "f1", ExternalImageId: "img-1" })],
+					});
+				}
+
+				if (sk === "PERSON#") {
+					// Pessoa antiga (f9) que sumiu do novo clustering.
+					return Promise.resolve({
+						Items: [
+							marshall({ PK: "ALBUM#col", SK: "PERSON#f9", PersonId: "f9" }),
+						],
+					});
+				}
+
+				return Promise.resolve({});
+			});
+			rekognitionSend.mockResolvedValue({ FaceMatches: [] });
+
+			await service.rebuild("col");
+
+			const transactions = dynamoSend.mock.calls
+				.map(([command]) => command)
+				.filter(
+					(command) => command.constructor.name === "TransactWriteItemsCommand",
+				);
+			// Uma única transação atômica com o Delete de f9 e o Put de f1.
+			expect(transactions).toHaveLength(1);
+			const items = transactions[0].input.TransactItems;
+			expect(items.some((i) => i.Delete?.Key?.SK?.S === "PERSON#f9")).toBe(
+				true,
+			);
+			expect(items.some((i) => i.Put?.Item?.SK?.S === "PERSON#f1")).toBe(true);
 		});
 	});
 
@@ -257,11 +309,10 @@ describe("PersonClusteringService", () => {
 			expect(rekognitionSend).toHaveBeenCalledTimes(1);
 			expect(summary).toEqual({ people: 1, faces: 3 });
 
-			const put = dynamoSend.mock.calls
-				.map(([command]) => command)
-				.find((command) => command.input.Item?.SK?.S?.startsWith("PERSON#"));
-			expect(put.input.Item.SK.S).toBe("PERSON#f1");
-			expect(put.input.Item.FaceCount.N).toBe("3");
+			const puts = transactPersonPuts();
+			expect(puts).toHaveLength(1);
+			expect(puts[0].SK.S).toBe("PERSON#f1");
+			expect(puts[0].FaceCount.N).toBe("3");
 		});
 	});
 

@@ -5,10 +5,13 @@ import {
 	GetItemCommand,
 	PutItemCommand,
 	QueryCommand,
+	type TransactWriteItem,
+	TransactWriteItemsCommand,
 } from "@aws-sdk/client-dynamodb";
 import { SearchFacesCommand } from "@aws-sdk/client-rekognition";
 import { SendMessageCommand } from "@aws-sdk/client-sqs";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
+import { splitBatches } from "../../../helpers/commons";
 import {
 	DynamoSingleton,
 	RekognitionSingleton,
@@ -27,6 +30,8 @@ const REBUILD_STATUS_SK = "PERSONREBUILD#STATUS";
 const REBUILD_PENDING_SK = "PERSONREBUILD#PENDING";
 // Janela de silêncio do debounce: coalesce um lote de uploads num rebuild só.
 const AUTO_REBUILD_QUIET_SECONDS = 120;
+// Limite de itens por transação do DynamoDB (TransactWriteItems).
+const TRANSACTION_ITEMS_LIMIT = 100;
 
 const coverKeyFor = (collectionId: string, faceId: string): string =>
 	`uploads/faces/${collectionId}/${faceId}.jpg`;
@@ -507,12 +512,48 @@ export class PersonClusteringService {
 		clusters: string[][],
 		imageOf: Map<string, string | undefined>,
 	): Promise<void> {
-		await this.clearPeople(collectionId);
+		const newPersonIds = new Set(
+			clusters.map((cluster) => [...cluster].sort()[0]),
+		);
+
+		const existing = await this.listPersonRecords(collectionId);
+
+		// Diff + upsert transacional em vez de "apaga tudo + regrava": nunca há
+		// uma janela em que os clusters somem. Só deleta as pessoas que sumiram
+		// (não estão no novo conjunto); as demais são sobrescritas pelo Put.
+		const writes: TransactWriteItem[] = [];
+
+		for (const record of existing) {
+			if (!newPersonIds.has(record.PersonId)) {
+				writes.push({
+					Delete: {
+						TableName: this.dynamo.tableName,
+						Key: marshall({
+							PK: `ALBUM#${collectionId}`,
+							SK: `PERSON#${record.PersonId}`,
+						}),
+					},
+				});
+			}
+		}
 
 		for (const cluster of clusters) {
-			await this.putPerson(
-				collectionId,
-				cluster.map((faceId) => ({ faceId, imageId: imageOf.get(faceId) })),
+			writes.push({
+				Put: {
+					TableName: this.dynamo.tableName,
+					Item: this.buildPersonItem(
+						collectionId,
+						cluster.map((faceId) => ({ faceId, imageId: imageOf.get(faceId) })),
+					),
+				},
+			});
+		}
+
+		// Cada lote (≤100 itens) é atômico; deletes e puts nunca colidem numa mesma
+		// SK (os conjuntos são disjuntos), então a transação não é rejeitada.
+		for (const batch of splitBatches(writes, TRANSACTION_ITEMS_LIMIT)) {
+			await this.dynamo.send(
+				new TransactWriteItemsCommand({ TransactItems: batch }),
 			);
 		}
 	}
@@ -557,10 +598,10 @@ export class PersonClusteringService {
 		return true;
 	}
 
-	private async putPerson(
+	private buildPersonItem(
 		collectionId: string,
 		faces: PersonFaceRef[],
-	): Promise<void> {
+	): Record<string, AttributeValue> {
 		const faceIds = faces.map((face) => face.faceId).sort();
 		const personId = faceIds[0];
 		const images = [
@@ -571,25 +612,32 @@ export class PersonClusteringService {
 			),
 		].sort();
 
+		return marshall(
+			{
+				PK: `ALBUM#${collectionId}`,
+				SK: `PERSON#${personId}`,
+				PersonId: personId,
+				CoverFaceId: personId,
+				CoverKey: coverKeyFor(collectionId, personId),
+				FaceIds: faceIds,
+				Faces: faces,
+				Images: images,
+				FaceCount: faceIds.length,
+				PhotoCount: images.length,
+				UpdatedAt: new Date().toISOString(),
+			},
+			{ removeUndefinedValues: true },
+		);
+	}
+
+	private async putPerson(
+		collectionId: string,
+		faces: PersonFaceRef[],
+	): Promise<void> {
 		await this.dynamo.send(
 			new PutItemCommand({
 				TableName: this.dynamo.tableName,
-				Item: marshall(
-					{
-						PK: `ALBUM#${collectionId}`,
-						SK: `PERSON#${personId}`,
-						PersonId: personId,
-						CoverFaceId: personId,
-						CoverKey: coverKeyFor(collectionId, personId),
-						FaceIds: faceIds,
-						Faces: faces,
-						Images: images,
-						FaceCount: faceIds.length,
-						PhotoCount: images.length,
-						UpdatedAt: new Date().toISOString(),
-					},
-					{ removeUndefinedValues: true },
-				),
+				Item: this.buildPersonItem(collectionId, faces),
 			}),
 		);
 	}
@@ -686,15 +734,5 @@ export class PersonClusteringService {
 		} while (exclusiveStartKey);
 
 		return records;
-	}
-
-	private async clearPeople(collectionId: string): Promise<void> {
-		const existing = await this.listPeople(collectionId);
-
-		await Promise.all(
-			existing.map((person) =>
-				this.deletePerson(collectionId, person.personId),
-			),
-		);
 	}
 }
