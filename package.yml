@@ -2,16 +2,13 @@ package:
   individually: true
   excludeDevDependencies: true
   patterns:
+    # Só zod e sharp são empacotados do node_modules (o AWS SDK v3 já vem no
+    # runtime nodejs20.x; as demais deps são inlined pelo serverless-plugin-optimize).
     - "!node_modules/**"
     - "node_modules/zod/**"
     - "node_modules/sharp/**"
     - "!app/**"
-    - "!dist/**"
-    - "!prisma/**"
-    - "!emails/**"
-    - "!libs/**"
     - "!.env"
-    - "!*.yml"
     - "!.env.*"
     - "!*.log"
     - "!*.md"
@@ -21,9 +18,9 @@ package:
     - "!*.json"
     - "!*.pem"
     - "!*.prettierrc"
-    - "!*.eslintrc"
-    - "!*.eslintrc.js"
     - "!*.editorconfig"
     - "!*.vscode/**"
     - "!*.github"
+    # Saída compilada (tsconfig outDir): contém os handlers referenciados no
+    # serverless.yml. DEVE ficar incluída — ver app/serverless-packaging.test.ts.
     - "build/**"
