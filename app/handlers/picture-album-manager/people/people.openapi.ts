@@ -2,6 +2,7 @@ import { createRoute } from "@hono/zod-openapi";
 import { AlbumIdParam, ErrorResponse } from "../commons";
 import {
 	ListPeopleResponse,
+	PageQuery,
 	PersonParam,
 	PersonPhotosResponse,
 	RebuildQueuedResponse,
@@ -14,6 +15,7 @@ export const listPeopleRoute = createRoute({
 	method: "get",
 	request: {
 		params: AlbumIdParam,
+		query: PageQuery,
 	},
 	responses: {
 		200: {
@@ -21,6 +23,14 @@ export const listPeopleRoute = createRoute({
 			content: {
 				"application/json": {
 					schema: ListPeopleResponse,
+				},
+			},
+		},
+		400: {
+			description: "Cursor de paginação inválido",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
 				},
 			},
 		},
@@ -57,6 +67,7 @@ export const listPersonPhotosRoute = createRoute({
 	method: "get",
 	request: {
 		params: PersonParam,
+		query: PageQuery,
 	},
 	responses: {
 		200: {
@@ -64,6 +75,14 @@ export const listPersonPhotosRoute = createRoute({
 			content: {
 				"application/json": {
 					schema: PersonPhotosResponse,
+				},
+			},
+		},
+		400: {
+			description: "Cursor de paginação inválido",
+			content: {
+				"application/json": {
+					schema: ErrorResponse,
 				},
 			},
 		},

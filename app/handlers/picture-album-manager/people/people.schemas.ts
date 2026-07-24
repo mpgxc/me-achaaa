@@ -13,9 +13,18 @@ export const PersonSummarySchema = z
 	})
 	.openapi("PersonSummary");
 
+export const PageQuery = z.object({
+	limit: z.coerce.number().int().min(1).max(200).optional(),
+	cursor: z.string().optional(),
+});
+
 export const ListPeopleResponse = z
 	.object({
 		people: z.array(PersonSummarySchema),
+		nextCursor: z
+			.string()
+			.optional()
+			.describe("Presente ⇒ há mais páginas; repasse em `cursor`"),
 	})
 	.openapi("ListPeopleResponse");
 
@@ -31,6 +40,10 @@ export const PersonPhotosResponse = z
 				}),
 			)
 			.describe("Fotos da pessoa com URL assinada do thumbnail"),
+		nextCursor: z
+			.string()
+			.optional()
+			.describe("Presente ⇒ há mais fotos; repasse em `cursor`"),
 	})
 	.openapi("PersonPhotosResponse");
 
