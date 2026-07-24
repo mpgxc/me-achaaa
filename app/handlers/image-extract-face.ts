@@ -175,7 +175,7 @@ const extractFacePicture = async ({
 
 			const cropped = await sharp(image)
 				.extract(params)
-				.toFormat("jpg")
+				.toFormat("jpeg")
 				.toBuffer();
 
 			{
