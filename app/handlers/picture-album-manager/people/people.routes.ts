@@ -12,7 +12,10 @@ import {
 	rebuildPeopleRoute,
 	rebuildStatusRoute,
 } from "./people.openapi";
-import { PersonClusteringService } from "./person-clustering.service";
+import {
+	InvalidCursorError,
+	PersonClusteringService,
+} from "./person-clustering.service";
 
 export const peopleManagementRoute = new OpenAPIHono<AppEnv>();
 
@@ -63,7 +66,11 @@ peopleManagementRoute.openapi(listPeopleRoute, async (ctx) => {
 			return ctx.json({ message: "Album not found" }, 404);
 		}
 
-		const people = await peopleService.listPeople(externalClientAlbumId);
+		const { limit, cursor } = ctx.req.valid("query");
+		const { people, nextCursor } = await peopleService.listPeople(
+			externalClientAlbumId,
+			{ limit, cursor },
+		);
 
 		// Enriquece com a URL assinada da capa (recorte de rosto) para o front
 		// renderizar sem acesso direto ao bucket.
@@ -76,8 +83,12 @@ peopleManagementRoute.openapi(listPeopleRoute, async (ctx) => {
 
 		setBrowseCacheHeaders(ctx);
 
-		return ctx.json({ people: enriched }, 200);
+		return ctx.json({ people: enriched, nextCursor }, 200);
 	} catch (error) {
+		if (error instanceof InvalidCursorError) {
+			return ctx.json({ message: error.message }, 400);
+		}
+
 		console.error("Error listing people:", error);
 
 		return ctx.json(
@@ -101,9 +112,11 @@ peopleManagementRoute.openapi(listPersonPhotosRoute, async (ctx) => {
 			return ctx.json({ message: "Album not found" }, 404);
 		}
 
+		const { limit, cursor } = ctx.req.valid("query");
 		const person = await peopleService.getPersonPhotos(
 			externalClientAlbumId,
 			personId,
+			{ limit, cursor },
 		);
 
 		if (!person) {
@@ -122,6 +135,10 @@ peopleManagementRoute.openapi(listPersonPhotosRoute, async (ctx) => {
 
 		return ctx.json({ ...person, photos }, 200);
 	} catch (error) {
+		if (error instanceof InvalidCursorError) {
+			return ctx.json({ message: error.message }, 400);
+		}
+
 		console.error("Error listing person photos:", error);
 
 		return ctx.json(

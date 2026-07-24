@@ -106,8 +106,8 @@ Tabela `...-rekognition-bucket-assets-controll`, chaves `PK`/`SK`, com um GSI `S
 | `GET` | `/albums/{id}/faces` | Lista as faces indexadas |
 | `DELETE` | `/albums/{id}/faces/{faceId}` | **Erasure de face (LGPD)** — Rekognition + S3 + Dynamo |
 | `POST` | `/albums/{id}/upload-url` | URL S3 pré-assinada para upload |
-| `GET` | `/albums/{id}/people` | **Navegar por pessoa** — lista os clusters (cacheável) |
-| `GET` | `/albums/{id}/people/{personId}/photos` | Fotos de uma pessoa (cacheável) |
+| `GET` | `/albums/{id}/people` | **Navegar por pessoa** — lista os clusters (cacheável, paginado: `limit`+`cursor`) |
+| `GET` | `/albums/{id}/people/{personId}/photos` | Fotos de uma pessoa (cacheável, paginado; URLs assinadas) |
 | `POST` | `/albums/{id}/people/rebuild` | Enfileira o rebuild dos clusters (assíncrono, **202**; paga Rekognition no worker) |
 | `GET` | `/albums/{id}/people/rebuild/status` | Status do último rebuild (`queued`/`running`/`done`/`failed`/`idle`) |
 | `POST` | `/search` | Busca por imagem — selfie (header `x-collection-id`, body `{ image }` base64; com cache de resultado) |

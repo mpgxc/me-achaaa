@@ -12,8 +12,12 @@ const mockListPeople = vi.fn();
 const mockGetPersonPhotos = vi.fn();
 const mockRequestRebuild = vi.fn();
 const mockGetRebuildStatus = vi.fn();
+// Mesma classe usada pela rota (via módulo mockado) e pelos testes, para o
+// `instanceof InvalidCursorError` na rota bater e devolver 400.
+const mockInvalidCursorError = class InvalidCursorError extends Error {};
 
 vi.mock("./person-clustering.service", () => ({
+	InvalidCursorError: mockInvalidCursorError,
 	PersonClusteringService: class {
 		listPeople = mockListPeople;
 		getPersonPhotos = mockGetPersonPhotos;
@@ -79,25 +83,34 @@ describe("GET /albums/{id}/people", () => {
 		expect(mockListPeople).not.toHaveBeenCalled();
 	});
 
-	it("returns 200 with the people and a cacheable Cache-Control", async () => {
-		mockListPeople.mockResolvedValue([
-			{
-				personId: "p1",
-				coverFaceId: "p1",
-				coverKey: "uploads/faces/col/p1.jpg",
-				faceCount: 3,
-				photoCount: 2,
-			},
-		]);
+	it("returns 200 with the people, nextCursor and a cacheable Cache-Control", async () => {
+		mockListPeople.mockResolvedValue({
+			people: [
+				{
+					personId: "p1",
+					coverFaceId: "p1",
+					coverKey: "uploads/faces/col/p1.jpg",
+					faceCount: 3,
+					photoCount: 2,
+				},
+			],
+			nextCursor: "CURSOR",
+		});
 
 		const res = await peopleManagementRoute.request(
-			`/albums/${VALID_UUID}/people`,
+			`/albums/${VALID_UUID}/people?limit=1`,
 			{ headers },
 		);
 
 		expect(res.status).toBe(200);
 		const body = await res.json();
 		expect(body.people).toHaveLength(1);
+		expect(body.nextCursor).toBe("CURSOR");
+		// Repassa os parâmetros de paginação ao serviço.
+		expect(mockListPeople).toHaveBeenCalledWith(VALID_UUID, {
+			limit: 1,
+			cursor: undefined,
+		});
 		// Enriquecido com a URL assinada da capa (a partir da coverKey).
 		expect(body.people[0].coverUrl).toBe(
 			"https://signed.example/uploads/faces/col/p1.jpg",
@@ -107,6 +120,17 @@ describe("GET /albums/{id}/people", () => {
 		expect(res.headers.get("Cache-Control")).toContain("public");
 		expect(res.headers.get("Cache-Control")).toContain("max-age");
 		expect(res.headers.get("Vary")).toBe("Authorization");
+	});
+
+	it("returns 400 on an invalid pagination cursor", async () => {
+		mockListPeople.mockRejectedValue(new mockInvalidCursorError());
+
+		const res = await peopleManagementRoute.request(
+			`/albums/${VALID_UUID}/people?cursor=bad`,
+			{ headers },
+		);
+
+		expect(res.status).toBe(400);
 	});
 });
 

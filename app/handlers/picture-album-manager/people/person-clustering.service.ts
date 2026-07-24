@@ -135,11 +135,6 @@ export type PersonSummary = {
 	photoCount: number;
 };
 
-export type PersonPhotos = {
-	personId: string;
-	images: string[];
-};
-
 export type RebuildStatus = {
 	status: "queued" | "running" | "done" | "failed";
 	queuedAt?: string;
@@ -148,6 +143,54 @@ export type RebuildStatus = {
 	people?: number;
 	faces?: number;
 	error?: string;
+};
+
+export type PageOpts = { limit?: number; cursor?: string };
+
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 200;
+
+const clampLimit = (limit?: number): number =>
+	Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(limit ?? DEFAULT_PAGE_SIZE)));
+
+/** Cursor de paginação inválido (mapeado para HTTP 400 na rota). */
+export class InvalidCursorError extends Error {
+	constructor() {
+		super("Cursor de paginação inválido.");
+		this.name = "InvalidCursorError";
+	}
+}
+
+// Cursor opaco (base64url de JSON) — o cliente só repassa; a forma interna
+// (LastEvaluatedKey do DynamoDB, ou um offset) não vaza na API.
+const encodeCursor = (payload: unknown): string =>
+	Buffer.from(JSON.stringify(payload)).toString("base64url");
+
+const decodeCursor = <T>(cursor: string): T => {
+	try {
+		return JSON.parse(Buffer.from(cursor, "base64url").toString()) as T;
+	} catch {
+		throw new InvalidCursorError();
+	}
+};
+
+const decodeKeyCursor = (
+	cursor?: string,
+): Record<string, AttributeValue> | undefined =>
+	cursor ? decodeCursor<Record<string, AttributeValue>>(cursor) : undefined;
+
+const decodeOffsetCursor = (cursor?: string): number => {
+	if (!cursor) {
+		return 0;
+	}
+
+	const { offset } = decodeCursor<{ offset?: number }>(cursor);
+
+	if (typeof offset !== "number" || offset < 0 || !Number.isInteger(offset)) {
+		throw new InvalidCursorError();
+	}
+
+	return offset;
 };
 
 /**
@@ -354,51 +397,66 @@ export class PersonClusteringService {
 
 	// --- leitura barata (cacheável / CDN) -----------------------------------
 
-	async listPeople(collectionId: string): Promise<PersonSummary[]> {
-		const people: PersonSummary[] = [];
-		let exclusiveStartKey: Record<string, AttributeValue> | undefined;
-
-		do {
-			const { Items, LastEvaluatedKey } = await this.dynamo.send(
-				new QueryCommand({
-					TableName: this.dynamo.tableName,
-					KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
-					ExpressionAttributeValues: marshall({
-						":pk": `ALBUM#${collectionId}`,
-						":sk": "PERSON#",
-					}),
-					ExclusiveStartKey: exclusiveStartKey,
+	/**
+	 * Página de pessoas do álbum (uma página de Query com `Limit`). `nextCursor`
+	 * (LastEvaluatedKey codificado) presente ⇒ há mais páginas.
+	 */
+	async listPeople(
+		collectionId: string,
+		opts: PageOpts = {},
+	): Promise<{ people: PersonSummary[]; nextCursor?: string }> {
+		const { Items, LastEvaluatedKey } = await this.dynamo.send(
+			new QueryCommand({
+				TableName: this.dynamo.tableName,
+				KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+				ExpressionAttributeValues: marshall({
+					":pk": `ALBUM#${collectionId}`,
+					":sk": "PERSON#",
 				}),
-			);
+				Limit: clampLimit(opts.limit),
+				ExclusiveStartKey: decodeKeyCursor(opts.cursor),
+			}),
+		);
 
-			for (const item of Items ?? []) {
-				const record = unmarshall(item) as {
-					PersonId: string;
-					CoverFaceId: string;
-					CoverKey: string;
-					FaceCount: number;
-					PhotoCount: number;
-				};
+		const people = (Items ?? []).map((item) => {
+			const record = unmarshall(item) as {
+				PersonId: string;
+				CoverFaceId: string;
+				CoverKey: string;
+				FaceCount: number;
+				PhotoCount: number;
+			};
 
-				people.push({
-					personId: record.PersonId,
-					coverFaceId: record.CoverFaceId,
-					coverKey: record.CoverKey,
-					faceCount: record.FaceCount,
-					photoCount: record.PhotoCount,
-				});
-			}
+			return {
+				personId: record.PersonId,
+				coverFaceId: record.CoverFaceId,
+				coverKey: record.CoverKey,
+				faceCount: record.FaceCount,
+				photoCount: record.PhotoCount,
+			};
+		});
 
-			exclusiveStartKey = LastEvaluatedKey;
-		} while (exclusiveStartKey);
-
-		return people;
+		return {
+			people,
+			nextCursor: LastEvaluatedKey ? encodeCursor(LastEvaluatedKey) : undefined,
+		};
 	}
 
+	/**
+	 * Página de fotos de uma pessoa. O registro `PERSON#` guarda todas as fotos
+	 * num item só, então a paginação é por offset em memória — o custo do
+	 * GetItem é o mesmo, mas a resposta (e a assinatura de URLs na rota) fica
+	 * limitada à página. Retorna `null` se a pessoa não existe.
+	 */
 	async getPersonPhotos(
 		collectionId: string,
 		personId: string,
-	): Promise<PersonPhotos | null> {
+		opts: PageOpts = {},
+	): Promise<{
+		personId: string;
+		images: string[];
+		nextCursor?: string;
+	} | null> {
 		const { Item } = await this.dynamo.send(
 			new GetItemCommand({
 				TableName: this.dynamo.tableName,
@@ -414,8 +472,20 @@ export class PersonClusteringService {
 		}
 
 		const record = unmarshall(Item) as { PersonId: string; Images?: string[] };
+		const allImages = record.Images ?? [];
 
-		return { personId: record.PersonId, images: record.Images ?? [] };
+		const offset = decodeOffsetCursor(opts.cursor);
+		const limit = clampLimit(opts.limit);
+		const nextOffset = offset + limit;
+
+		return {
+			personId: record.PersonId,
+			images: allImages.slice(offset, nextOffset),
+			nextCursor:
+				nextOffset < allImages.length
+					? encodeCursor({ offset: nextOffset })
+					: undefined,
+		};
 	}
 
 	// --- construção cara (offline / sob demanda) ----------------------------

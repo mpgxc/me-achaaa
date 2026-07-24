@@ -6,6 +6,7 @@ import type {
 	SqsSingleton,
 } from "../../../providers";
 import {
+	InvalidCursorError,
 	PersonClusteringService,
 	clusterFaces,
 } from "./person-clustering.service";
@@ -100,7 +101,7 @@ describe("PersonClusteringService", () => {
 			.filter((item) => item?.SK?.S?.startsWith("PERSON#"));
 
 	describe("listPeople", () => {
-		it("maps PERSON# records to lightweight summaries", async () => {
+		it("maps a page of PERSON# records to lightweight summaries", async () => {
 			dynamoSend.mockResolvedValue({
 				Items: [
 					marshall({
@@ -116,7 +117,9 @@ describe("PersonClusteringService", () => {
 				LastEvaluatedKey: undefined,
 			});
 
-			expect(await service.listPeople("col")).toEqual([
+			const { people, nextCursor } = await service.listPeople("col");
+
+			expect(people).toEqual([
 				{
 					personId: "p1",
 					coverFaceId: "p1",
@@ -125,6 +128,35 @@ describe("PersonClusteringService", () => {
 					photoCount: 2,
 				},
 			]);
+			expect(nextCursor).toBeUndefined();
+			// Uma única página (Query com Limit), não um loop até esgotar.
+			expect(
+				dynamoSend.mock.calls.filter(
+					([c]) => c.constructor.name === "QueryCommand",
+				),
+			).toHaveLength(1);
+		});
+
+		it("returns a nextCursor when there are more pages", async () => {
+			dynamoSend.mockResolvedValue({
+				Items: [],
+				LastEvaluatedKey: marshall({ PK: "ALBUM#col", SK: "PERSON#p9" }),
+			});
+
+			const { nextCursor } = await service.listPeople("col", { limit: 10 });
+
+			expect(nextCursor).toBeTruthy();
+			// O cursor é opaco: decodifica de volta para a LastEvaluatedKey.
+			const decoded = JSON.parse(
+				Buffer.from(nextCursor as string, "base64url").toString(),
+			);
+			expect(decoded.SK.S).toBe("PERSON#p9");
+		});
+
+		it("rejects an invalid cursor", async () => {
+			await expect(
+				service.listPeople("col", { cursor: "not-base64-json" }),
+			).rejects.toThrow(InvalidCursorError);
 		});
 	});
 
@@ -143,6 +175,29 @@ describe("PersonClusteringService", () => {
 				personId: "p1",
 				images: ["img-1", "img-2"],
 			});
+		});
+
+		it("paginates the images by limit and returns a nextCursor", async () => {
+			dynamoSend.mockResolvedValue({
+				Item: marshall({
+					PK: "ALBUM#col",
+					SK: "PERSON#p1",
+					PersonId: "p1",
+					Images: ["a", "b", "c"],
+				}),
+			});
+
+			const first = await service.getPersonPhotos("col", "p1", { limit: 2 });
+			expect(first?.images).toEqual(["a", "b"]);
+			expect(first?.nextCursor).toBeTruthy();
+
+			// A próxima página começa no offset codificado no cursor.
+			const second = await service.getPersonPhotos("col", "p1", {
+				limit: 2,
+				cursor: first?.nextCursor,
+			});
+			expect(second?.images).toEqual(["c"]);
+			expect(second?.nextCursor).toBeUndefined();
 		});
 
 		it("returns null when the person does not exist", async () => {
