@@ -50,7 +50,7 @@
 		"@hono/zod-openapi": "^0.18.3",
 		"@scalar/hono-api-reference": "^0.5.166",
 		"dayjs": "^1.11.13",
-		"hono": "^4.12.12",
+		"hono": "^4.13.1",
 		"pino": "^9.6.0",
 		"pino-pretty": "^13.0.0",
 		"sharp": "^0.35.3",
